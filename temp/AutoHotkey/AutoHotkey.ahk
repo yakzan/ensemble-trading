@@ -122,9 +122,12 @@ Capslock & ] up::SendInput {Ctrl Up}{Tab Up}
 Capslock & [::SendInput {Ctrl Down}{Shift Down}{Tab Down}
 Capslock & [ up::SendInput {Ctrl Up}{Shift Up}{Tab Up}
 
+; Capslock + 5: F5
+Capslock & 5::SendInput {F5}
+
 ; Capslock + TAB (alt tab) #chenzg
 Capslock & Tab::SendInput {Alt Down}{Tab Down}
-Capslock & Tab up::SendInput {Alt Up}{Tab Up}
+Capslock & Tab up::SendInput {Alt Down}{Tab Up}
 
 
 ; Capslock + ,/. (undo/redo)

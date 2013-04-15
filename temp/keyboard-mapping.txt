@@ -1,0 +1,24 @@
+Key Mapping:
+
+Right Windows / Context Menu -> `~
+`~                           -> ESC
+ESC                          -> Left Windows
+Left Windows                 -> Left Alt
+Left Alt                     -> Caps Lock
+Caps Lock                    -> Left Control
+
+Two Left Control,
+Right Windows / ContextMenu is no longer available.
+
+
+Left Windows
+ESC
+TAB
+Left Control
+Left Shift
+Left Control
+
+Left Control, Left Alt, Caps Lock (Command), Space, Alt, Right Windows, `~, Control
+Left Control, Left Alt, Caps Lock (Command), Space, Alt, `~, Context Menu, Control
+
+

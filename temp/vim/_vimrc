@@ -69,6 +69,19 @@ let g:acp_completeoptPreview=1
 Bundle 'mbbill/fencview'
 "let g:fencview_autodetect=1
 
+Bundle 'orenhe/pylint.vim'
+Bundle 'Pydiction'
+Bundle 'ervandew/supertab'
+Bundle 'sontek/minibufexpl.vim'
+Bundle 'kevinw/pyflakes'
+
+Bundle 'taglist.vim'
+let Tlist_Show_One_File=1
+let Tlist_Exit_OnlyWindow=1
+nnoremap <F2> :TlistToggle<cr>
+
+Bundle 'cscope.vim'
+
 "===================================================
 " General
 "===================================================
@@ -322,12 +335,12 @@ nnoremap <silent> <leader>te :tabedit <c-r>=expand("%:p:h")<cr>/
 nnoremap <leader>cd :cd <c-r>=expand("%:p:h")<cr><cr>:pwd<cr>
 
 " cope: quickfix
-nnoremap <silent> <leader>fn :botright cope<cr>
-nnoremap <silent> <leader>fe ggVGy:tabnew<cr>:set syntax=qf<cr>pgg
-nnoremap <silent> [f :cp<cr>
-nnoremap <silent> ]f :cn<cr>
-nnoremap <silent> [F :cfirst<cr>
-nnoremap <silent> ]F :clast<cr>
+nnoremap <silent> <leader>cn :botright cope<cr>
+nnoremap <silent> <leader>ce ggVGy:tabnew<cr>:set syntax=qf<cr>pgg
+nnoremap <silent> [c :cp<cr>
+nnoremap <silent> ]c :cn<cr>
+nnoremap <silent> [C :cfirst<cr>
+nnoremap <silent> ]C :clast<cr>
 
 "--------------------------------------------------
 
@@ -366,9 +379,10 @@ set clipboard=unnamed
 
 "--------------------------------------------------
 " code completion
+"--------------------------------------------------
 " Ctrl-N, Ctrl-P
 " Omin Complete: Ctrl-X Ctrl-O
-set completeopt+=longest
+set completeopt+=longest,menu
 
 autocmd InsertLeave * if pumvisible() == 0|pclose|endif
 inoremap <expr> <cr>       pumvisible() ? "\<c-y>" : "\<cr>"
@@ -377,12 +391,28 @@ inoremap <expr> <down>     pumvisible() ? "\<c-n>" : "\<down>"
 inoremap <expr> <c-p>      pumvisible() ? "\<c-p>" : "\<up>"
 inoremap <expr> <up>       pumvisible() ? "\<c-p>" : "\<up>"
 inoremap <expr> <pagedown> pumvisible() ? "\<pagedown>\<c-p>\<c-n>" : "\<pagedown>"
-inoremap <expr> <c-f>      pumvisible() ? "\<pagedown>\<c-p>\<c-n>" : "\<pagedown>"
+inoremap <expr> <c-f>      pumvisible() ? "\<pagedown>\<c-p>\<c-n>" : "\<right>"
 inoremap <expr> <pageup>   pumvisible() ? "\<pageup>\<c-p>\<c-n>" : "\<pageup>"
-inoremap <expr> <c-b>      pumvisible() ? "\<pageup>\<c-p>\<c-n>" : "\<pageup>"
+inoremap <expr> <c-b>      pumvisible() ? "\<pageup>\<c-p>\<c-n>" : "\<left>"
 
 autocmd filetype python set omnifunc=pythoncomplete#Complete
 autocmd filetype c      set omnifunc=ccomplete#Complete
+
+autocmd filetype python call SetupPythonIDE()
+
+function! SetupPythonIDE()
+    " Pydiction
+    "  use <Tab> to auto complete
+    let g:pydiction_location='~/.vim/bundle/Pydiction/complete-dict'
+    let g:pydiction_menu_height=20
+
+    set foldmethod=indent
+
+    "TODO: snippets, use snipmate
+
+    let g:pyflakes_use_quickfix = 0
+
+endfunction
 
 "--------------------------------------------------
 " code navigation
@@ -391,7 +421,9 @@ autocmd filetype c      set omnifunc=ccomplete#Complete
 " [[, ]], %
 " Ctrl-O, Ctrl-I
 
-" ctags:
+"--------------------------------------------------
+" ctags: http://ctags.sourceforge.net/
+"--------------------------------------------------
 " ctags -R .
 set tags=./tags,../tags,tags
 " Ctrl-], Ctrl-T: go to last match, g Ctrl-]: show all possible tags
@@ -400,6 +432,31 @@ vnoremap <c-]> g<c-]>
 nnoremap g<c-]> <c-]>
 vnoremap g<c-]> <c-]>
 " autocmd BufWritePost * call system("ctags -R")
+
+"--------------------------------------------------
+" cscope: http://sourceforge.net/projects/mslk/
+"--------------------------------------------------
+let g:cscope_cmd = 'd:/bin/cscope/cscope.exe'
+set cscopequickfix=s-,c-,d-,i-,t-,e-
+set cscopetagorder=1
+set cscopetag
+set cscopeverbose
+
+command! -nargs=0 Cscope execute "cs add " . expand("%:p:h") . "/cscope.out"
+" build cscope database
+nmap <F11> :!cscope -bv *.h *.cpp *.py *.cs *.java *.hpp *.c<CR>
+  \:cs reset<CR>
+
+" :CscopeGen /dir
+" ,fs    find this C symbol
+" ,fg    find this definition
+" ,fd    find functions called by this function
+" ,fc    find functions calling this function
+" ,ft    find this text string
+" ,fe    find this egrep pattern
+" ,ff    find this file
+" ,fi    find files #including this file
+" ,l     toggle location list
 
 "--------------------------------------------------
 " code folding
@@ -423,6 +480,7 @@ autocmd QuickFixCmdPost    l* nested lwindow
 "自动载入配置文件不需要重启
 "autocmd bufwritepost _vimrc source %
 
+nnoremap <leader>rc :ed ~/_vimrc<cr>
 nnoremap <leader>ss :so ~/_vimrc<cr>
 
 autocmd bufwrite *.py :call DeleteTrailingWS()

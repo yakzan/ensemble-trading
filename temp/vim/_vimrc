@@ -1,9 +1,14 @@
 set nocompatible          "不要兼容vi
 filetype off              "必须的设置：
 
+let mapleader=","
+let g:mapleader=","
+
 "===================================================
 " Vundle Settings
 "===================================================
+" use BundleInstall to install bundles
+
 set rtp+=~/.vim/bundle/vundle/
 call vundle#rc()
 
@@ -12,8 +17,8 @@ call vundle#rc()
 Bundle 'gmarik/vundle'
 
 Bundle 'AutoClose'
-let g:autoclose_on = 0 " disable auto close by default
-nnoremap <leader>x <Plug>ToggleAutoCloseMappings
+let g:autoclose_on=0
+nmap <leader>x <Plug>ToggleAutoCloseMappings
 
 Bundle 'ctrlp.vim'
 Bundle 'ZenCoding.vim'
@@ -32,10 +37,6 @@ nnoremap <leader>_ff :call g:Jsbeautify()<cr>
 Bundle 'EasyMotion'
 let g:EasyMotion_leader_key = '<leader><leader>'
 
-"Fencview的初始设置
-"Bundle 'FencView.vim'
-"let g:fencview_autodetect=1
-
 Bundle 'The-NERD-tree'
 "设置相对行号
 nnoremap <leader>nt :NERDTree<cr>:set rnu<cr>
@@ -48,7 +49,6 @@ let NERDTreeWinPos=1
 
 Bundle 'The-NERD-Commenter'
 let NERDShutUp=1
-"支持单行和多行的选择，//格式
 map <c-h> ,c<space>
 
 "Bundle 'UltiSnips'
@@ -65,6 +65,9 @@ let g:indent_guides_guide_size=4
 
 Bundle 'AutoComplPop'
 let g:acp_completeoptPreview=1
+
+Bundle 'mbbill/fencview'
+"let g:fencview_autodetect=1
 
 "===================================================
 " General
@@ -124,10 +127,6 @@ set tm=500
 autocmd GUIEnter * set vb t_vb=
 autocmd VimEnter * set vb t_vb=
 
-"set columns=135           "初始窗口的宽度
-"set lines=50              "初始窗口的高度
-"winpos 620 45             "初始窗口的位置
-
 "colorscheme elflord
 "colorscheme torte
 colorscheme desert
@@ -137,22 +136,24 @@ set guifont=Consolas:h11
 
 if has("gui_running")
     set t_Co=256
-    "设置隐藏gvim的菜单和工具栏 F2切换
+    "设置隐藏gvim的菜单和工具栏 F8切换
     set guioptions-=m
     set guioptions-=T
     "去除左右两边的滚动条
     set guioptions-=r
     set guioptions-=L
-    map <silent> <F2> :if &guioptions =~# 'T' <Bar>
-            \set guioptions-=T <Bar>
+    map <silent> <F8> :if &guioptions =~# 'T' <bar>
+            \set guioptions-=T <bar>
             \set guioptions-=m <bar>
-        \else <Bar>
-            \set guioptions+=T <Bar>
-            \set guioptions+=m <Bar>
-        \endif<CR>
+        \else <bar>
+            \set guioptions+=T <bar>
+            \set guioptions+=m <bar>
+        \endif<cr>
 endif
 
-"tab setting {
+"--------------------------------------------------
+" tab and indent
+"--------------------------------------------------
 set tabstop=4
 set shiftwidth=4
 set softtabstop=4
@@ -162,22 +163,44 @@ set autoindent
 set cindent    " enable automatic C program indenting.
 "}
 
-"encoding settings {
-set fileencodings=ucs-bom,utf-8,gbk,cp936,gb18030,big5,euc-jp,euc-kr,latin1
-"set encoding=utf-8
-set fenc=utf-8
+"--------------------------------------------------
+" encoding settings 编码
+"--------------------------------------------------
+
+" the list of encodings considered when starting to edit an existing file.
+set fileencodings=cp936,ucs-bom,utf-8,gb18030,big5,euc-jp,euc-kr,latin1
+
+" fileencoding(fenc): for the file of this buffer.
+" let Vim detects it automatically.
+" to convert file encoding to utf-8 when saving file:
+" :set fileencoding=utf8
+" :w
+
+if has("gui_running")
+    " encoding: used inside Vim.
+    set encoding=utf-8
+    source $VIMRUNTIME/delmenu.vim
+    source $VIMRUNTIME/menu.vim
+    language messages zh_CN.utf-8
+else
+    set termencoding=cp936
+    set encoding=cp936
+endif
+
+set nobomb
+
+if v:lang =~? '^\(zh\)\|\(ja\)\|\(ko\)'
+    set ambiwidth=double
+endif
+
 set ffs=unix,dos,mac
-"}
 
 "===================================================
 " Key mappings
 "===================================================
-let mapleader=","
-let g:mapleader=","
-
 " avoid the cursor keys when recalling commands from history.
-cnoremap <C-p> <Up>
-cnoremap <C-n> <Down>
+cnoremap <c-p> <up>
+cnoremap <c-n> <down>
 
 "--------------------------------------------------
 " Visual mode related
@@ -205,10 +228,11 @@ inoremap <m-a> <home>
 inoremap <m-e> <end>
 
 " <c-j> insert newline
-" <c-k>: to insert special characters. now use <c-m> instead
-inoremap <c-m> <c-k>
+" <c-k>: to insert special characters. now use <c-\> instead
+inoremap <c-\> <c-k>
 " delete everything to the right of cursor
 inoremap <c-k> <esc><right>C
+"inoremap <c-k> <c-o>D
 " <c-h> backspace
 inoremap <c-l> <del>
 " <c-t> indent current line
@@ -217,8 +241,8 @@ inoremap <c-l> <del>
 " 模拟 Emacs 键绑定
 inoremap <c-a> <home>
 inoremap <c-e> <end>
-"inoremap <c-p> <up>
-"inoremap <c-n> <down>
+inoremap <c-p> <up>
+inoremap <c-n> <down>
 inoremap <c-b> <left>
 inoremap <c-f> <right>
 inoremap <m-b> <c-o>b
@@ -226,11 +250,12 @@ inoremap <m-f> <c-o>w
 "inoremap <c-u> <esc>d0cl
 "inoremap <c-w> <esc>dbcl
 " delete everything to the right of cursor
+"inoremap <c-k> <esc><right>C
 "inoremap <c-k> <c-o>D
 " delete the next character: <del>
 inoremap <c-d> <esc><right>s
 " kill the next word
-"inoremap <m-d> <C-o>de
+inoremap <m-d> <c-o>de
 
 " to recover lost text, Esc to normal mode and undo
 inoremap <c-h> <c-g>u<c-h>
@@ -245,7 +270,7 @@ inoremap <c-z> <c-o>u
 "noremap <c-y> <c-r>
 "inoremap <c-y> <c-o><c-r>
 inoremap <silent> <c-s> <esc>:w<cr>i
-noremap <silent> <C-s> :w<CR>
+noremap <silent> <c-s> :w<cr>
 nnoremap <leader>w :w!<cr>
 
 "--------------------------------------------------
@@ -266,17 +291,21 @@ nnoremap <leader>wh <c-w>h
 
 " managing buffers
 " https://github.com/tpope/vim-unimpaired
-nnoremap <silent> [b :bprevious<CR>
-nnoremap <silent> ]b :bnext<CR>
-nnoremap <silent> [B :bfirst<CR>
-nnoremap <silent> ]B :blast<CR>
-nnoremap <silent> <leader>bo :only<cr>
-nnoremap <silent> <leader>bl :buffers<cr>
-nnoremap <silent> <leader>bc :Bclose<cr>
-nnoremap <silent> <leader>bd :bd<cr>
+nnoremap <silent> [b :bprevious<cr>
+nnoremap <silent> ]b :bnext<cr>
+nnoremap <silent> [B :bfirst<cr>
+nnoremap <silent> ]B :blast<cr>
+" :only doesn't delete other buffers
+"nnoremap <silent> <leader>bo  :only<cr>
+nnoremap <silent> <leader>bo  :call BufOnly(0)<cr>
+nnoremap <silent> <leader>boo :call BufOnly(1)<cr>
+nnoremap <silent> <leader>bl  :buffers<cr>
+nnoremap <silent> <leader>ls  :buffers<cr>
+nnoremap <silent> <leader>bc  :BufClose<cr>
+nnoremap <silent> <leader>bd  :bd<cr>
 nnoremap <silent> <leader>bdd :bd!<cr>
-nnoremap <silent> <leader>ba :1,1000 bd!<cr>
-nnoremap <silent> <leader>be :edit <c-r>=expand("%:p:h")<cr>/
+nnoremap <silent> <leader>ba  :1,1000 bd!<cr>
+nnoremap <silent> <leader>be  :edit <c-r>=expand("%:p:h")<cr>/
 
 " managing tabs
 nnoremap <silent> ]t gt
@@ -290,7 +319,7 @@ nnoremap <silent> <leader>tm :tabmove
 " open a new tab to edit files in the same directory
 nnoremap <silent> <leader>te :tabedit <c-r>=expand("%:p:h")<cr>/
 
-nnoremap <leader>cd :cd "%:p:h"<cr>:pwd<cr>
+nnoremap <leader>cd :cd <c-r>=expand("%:p:h")<cr><cr>:pwd<cr>
 
 " cope: quickfix
 nnoremap <silent> <leader>fn :botright cope<cr>
@@ -303,7 +332,7 @@ nnoremap <silent> ]F :clast<cr>
 "--------------------------------------------------
 
 " 为方便复制，开启/关闭行号显示：
-"nnoremap <F3> :set nonumber!<CR>:set foldcolumn=0<CR>
+"nnoremap <F3> :set nonumber!<cr>:set foldcolumn=0<cr>
 
 " treat long lines as break lines
 nnoremap j gj
@@ -312,20 +341,20 @@ nnoremap k gk
 " simplify regular expressions using 'very magic'
 " make every following character except a-zA-Z0-9
 " and '-' have special meaning.
-nnoremap / /\v
+nnoremap / /\v<
 vnoremap / /\v
 
 "使用,v来选择刚刚复制的段落，这样可以用来缩进
 nnoremap <leader>v v`]
 
 nnoremap <silent> <leader><space> :noh<cr>
-nnoremap <silent> <C-l> :<C-u>nohlsearch<CR><C-l>
+nnoremap <silent> <c-l> :<c-u>nohlsearch<cr><c-l>
 
 "取消粘贴缩进
-nmap <leader>p :set paste<CR>
-nmap <leader>pp :set nopaste<CR>
-" VimTip21 is spot on but the title suggests it's for MS Windows only.
-" It also mentions that we can change out settings so
+nmap <leader>p :set paste<cr>
+nmap <leader>pp :set nopaste<cr>
+
+" make copy and paste easier in Windows.
 " the "anonymous" register is aliased to the * register using:
 set clipboard=unnamed
 
@@ -333,24 +362,36 @@ set clipboard=unnamed
 " coding
 "==================================================
 
-" code completion {
+" K: show document of method under cursor?
+
+"--------------------------------------------------
+" code completion
 " Ctrl-N, Ctrl-P
 " Omin Complete: Ctrl-X Ctrl-O
 set completeopt+=longest
+
 autocmd InsertLeave * if pumvisible() == 0|pclose|endif
-inoremap <expr> <CR>       pumvisible() ? "\<C-y>" : "\<CR>"
-inoremap <expr> <Down>     pumvisible() ? "\<C-n>" : "\<Down>"
-inoremap <expr> <Up>       pumvisible() ? "\<C-p>" : "\<Up>"
-inoremap <expr> <PageDown> pumvisible() ? "\<PageDown>\<C-p>\<C-n>" : "\<PageDown>"
-inoremap <expr> <PageUp>   pumvisible() ? "\<PageUp>\<C-p>\<C-n>" : "\<PageUp>"
-" }
+inoremap <expr> <cr>       pumvisible() ? "\<c-y>" : "\<cr>"
+inoremap <expr> <c-n>      pumvisible() ? "\<c-n>" : "\<down>"
+inoremap <expr> <down>     pumvisible() ? "\<c-n>" : "\<down>"
+inoremap <expr> <c-p>      pumvisible() ? "\<c-p>" : "\<up>"
+inoremap <expr> <up>       pumvisible() ? "\<c-p>" : "\<up>"
+inoremap <expr> <pagedown> pumvisible() ? "\<pagedown>\<c-p>\<c-n>" : "\<pagedown>"
+inoremap <expr> <c-f>      pumvisible() ? "\<pagedown>\<c-p>\<c-n>" : "\<pagedown>"
+inoremap <expr> <pageup>   pumvisible() ? "\<pageup>\<c-p>\<c-n>" : "\<pageup>"
+inoremap <expr> <c-b>      pumvisible() ? "\<pageup>\<c-p>\<c-n>" : "\<pageup>"
+
+autocmd filetype python set omnifunc=pythoncomplete#Complete
+autocmd filetype c      set omnifunc=ccomplete#Complete
 
 "--------------------------------------------------
-" code navigation {
+" code navigation
+"--------------------------------------------------
 " gd, gD, *, #, g*, g#
 " [[, ]], %
 " Ctrl-O, Ctrl-I
-" ctags: {
+
+" ctags:
 " ctags -R .
 set tags=./tags,../tags,tags
 " Ctrl-], Ctrl-T: go to last match, g Ctrl-]: show all possible tags
@@ -359,26 +400,21 @@ vnoremap <c-]> g<c-]>
 nnoremap g<c-]> <c-]>
 vnoremap g<c-]> <c-]>
 " autocmd BufWritePost * call system("ctags -R")
-" }
-" }
 
 "--------------------------------------------------
-" code folding {
+" code folding
+"--------------------------------------------------
 " za: toggle current folding
 set foldmethod=syntax
 " no folding by default
 set foldlevel=99
-" }
 
 "--------------------------------------------------
-" compile and fix errors {
+" compile and fix errors
+"--------------------------------------------------
 " show quickfix window on compilation errors
 autocmd QuickFixCmdPost [^l]* nested cwindow
 autocmd QuickFixCmdPost    l* nested lwindow
-" }
-
-
-" K: show document of method under cursor?
 
 "==================================================
 " autocmd
@@ -388,9 +424,6 @@ autocmd QuickFixCmdPost    l* nested lwindow
 "autocmd bufwritepost _vimrc source %
 
 nnoremap <leader>ss :so ~/_vimrc<cr>
-
-autocmd filetype python set omnifunc=pythoncomplete#Complete
-autocmd filetype c      set omnifunc=ccomplete#Complete
 
 autocmd bufwrite *.py :call DeleteTrailingWS()
 autocmd bufwrite *.cpp :call DeleteTrailingWS()
@@ -441,7 +474,7 @@ function! DeleteTrailingWS()
 endfunction
 
 " Don't close window, when deleting a buffer
-command! Bclose call <SID>BufcloseCloseIt()
+command! BufClose call <SID>BufcloseCloseIt()
 function! <SID>BufcloseCloseIt()
     let l:currentBufNum = bufnr("%")
     let l:alternateBufNum = bufnr("#")
@@ -459,6 +492,28 @@ function! <SID>BufcloseCloseIt()
     if buflisted(l:currentBufNum)
         execute("bdelete! ".l:currentBufNum)
     endif
+endfunction
+
+" return the list of buffer numbers
+function! BufList()
+    redir => bufnames
+    silent ls
+    redir END
+    let list = []
+    for i in split(bufnames, "\n")
+        let buf = split(i, ' ')
+        call add(list, buf[0])
+    endfor
+    return list
+endfunction
+
+" delete all other buffers except the current one
+function! BufOnly(force)
+    let list = filter(BufList(), 'v:val != bufnr("%")')
+    let bdcmd = a:force ? "bdelete! " : "bdelete "
+    for buffer in list
+        exec bdcmd . buffer
+    endfor
 endfunction
 
 " pipe the output of a command into a new tab.

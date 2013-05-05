@@ -1,7 +1,9 @@
 set nocompatible          "不要兼容vi
 filetype off              "必须的设置：
 
-"Vundle Settings {
+"===================================================
+" Vundle Settings
+"===================================================
 set rtp+=~/.vim/bundle/vundle/
 call vundle#rc()
 
@@ -9,25 +11,26 @@ call vundle#rc()
 " required!
 Bundle 'gmarik/vundle'
 
-Bundle 'ctrlp.vim'
 Bundle 'AutoClose'
-"Bundle 'ZenCoding.vim'
+let g:autoclose_on = 0 " disable auto close by default
+nnoremap <leader>x <Plug>ToggleAutoCloseMappings
+
+Bundle 'ctrlp.vim'
+Bundle 'ZenCoding.vim'
 Bundle 'matchit.zip'
 Bundle 'Tabular'
 "Bundle 'Valloric/YouCompleteMe'
 Bundle 'spiiph/vim-space'
 Bundle 'trailing-whitespace'
-Bundle 'Lokaltog/vim-powerline'
 Bundle 'Tagbar'
 Bundle 'Syntastic'
 Bundle 'surround.vim'
-Bundle 'AutoComplPop'
 
 Bundle '_jsbeautify'
-nnoremap <leader>_ff :call g:Jsbeautify()<CR>
+nnoremap <leader>_ff :call g:Jsbeautify()<cr>
 
 Bundle 'EasyMotion'
-let g:EasyMotion_leader_key = '<Leader><Leader>'
+let g:EasyMotion_leader_key = '<leader><leader>'
 
 "Fencview的初始设置
 "Bundle 'FencView.vim'
@@ -35,7 +38,7 @@ let g:EasyMotion_leader_key = '<Leader><Leader>'
 
 Bundle 'The-NERD-tree'
 "设置相对行号
-nmap <leader>nt :NERDTree<cr>:set rnu<cr>
+nnoremap <leader>nt :NERDTree<cr>:set rnu<cr>
 let NERDTreeShowBookmarks=1
 let NERDTreeShowFiles=1
 let NERDTreeShowHidden=1
@@ -53,147 +56,282 @@ map <c-h> ,c<space>
 "let g:UltiSnipsJumpForwardTrigger="<c-j>"
 "let g:UltiSnipsJumpBackwardTrigger="<c-k>"
 
-"}
+Bundle 'Lokaltog/vim-powerline'
+"let g:Powerline_symbols='fancy'
+
+"Indent Guides设置
+Bundle 'nathanaelkane/vim-indent-guides'
+let g:indent_guides_guide_size=4
+
+Bundle 'AutoComplPop'
+let g:acp_completeoptPreview=1
+
+"===================================================
+" General
+"===================================================
 
 "放置在Bundle的设置后，防止意外BUG
 filetype plugin indent on
 syntax on
 
-set ruler                    " 显示当前的行号列号
-set showcmd                  " 在状态栏显示正在输入的命令
-"打开配对括号高亮
-"DoMatchParen
-"NoMatchParen
-set number                   "显示行号
-" 为方便复制，开启/关闭行号显示：
-nnoremap <F3> :set nonumber!<CR>:set foldcolumn=0<CR>
-" 允许被编辑的文件以注释的形式设置Vim选项
-set modeline
+"set undofile   "无限undo
+set history=10000
+set noswapfile
+set nobackup
 
-"Color Settings {
+set modeline   " 允许被编辑的文件以注释的形式设置Vim选项
+set autoread
+
+set ignorecase
+set smartcase
+set incsearch
+set hlsearch
+set magic
+set gdefault    " When on, the ":substitute" flag 'g' is default on.
+
+set lazyredraw  " don't redraw while executing macros
+
+"set whichwrap+=<,>,h,l,[,],b
 set backspace=indent,eol,start
+"set isk+=-     "将-连接符也设置为单词
+
+set wildmenu
+set wildignore=*.o,*~,*.pyc
+
+"===================================================
+" VIM user interface
+"===================================================
+
+set scrolloff=4
+let loaded_matchparen = 1
+set showmatch
+set hidden
+set laststatus=2
+set number
+set numberwidth=4
+"set relativenumber
+"set ruler    " using powerline instead
+set showcmd
+set cmdheight=2
+set scrolloff=3
+set wrap
+
+" no annoying sound on errors
+set noerrorbells
+set visualbell
+set t_vb=
+set tm=500
+autocmd GUIEnter * set vb t_vb=
+autocmd VimEnter * set vb t_vb=
+
+"set columns=135           "初始窗口的宽度
+"set lines=50              "初始窗口的高度
+"winpos 620 45             "初始窗口的位置
+
 "colorscheme elflord
 "colorscheme torte
 colorscheme desert
 "colorscheme murphy
 set background=dark
-"}
+set guifont=Consolas:h11
+
+if has("gui_running")
+    set t_Co=256
+    "设置隐藏gvim的菜单和工具栏 F2切换
+    set guioptions-=m
+    set guioptions-=T
+    "去除左右两边的滚动条
+    set guioptions-=r
+    set guioptions-=L
+    map <silent> <F2> :if &guioptions =~# 'T' <Bar>
+            \set guioptions-=T <Bar>
+            \set guioptions-=m <bar>
+        \else <Bar>
+            \set guioptions+=T <Bar>
+            \set guioptions+=m <Bar>
+        \endif<CR>
+endif
 
 "tab setting {
 set tabstop=4
 set shiftwidth=4
 set softtabstop=4
 set expandtab
+set autoindent
+"set smartindent    " only for C and obsolete (replaced by 'cindent')
+set cindent    " enable automatic C program indenting.
 "}
 
-set fileencodings=ucs-bom,utf-8,cp936,gb18030,big5,euc-jp,euc-kr,latin1
-set scrolloff=3
-set fenc=utf-8
-set autoindent
-set hidden
+"encoding settings {
+set fileencodings=ucs-bom,utf-8,gbk,cp936,gb18030,big5,euc-jp,euc-kr,latin1
 "set encoding=utf-8
-
-set laststatus=2
-set undofile                                  "无限undo
-set nowrap                                    "禁止自动换行
-autocmd! bufwritepost _vimrc source %         "自动载入配置文件不需要重启
-
-" set relativenumber                             "相对行号 要想相对行号起作用要放在显示行号后面
-set wrap                                       "自动换行
-set guifont=Consolas:h12                    "GUI界面里的字体，默认有抗锯齿
-set isk+=-                                     "将-连接符也设置为单词
-
-set ignorecase "设置大小写敏感和聪明感知(小写全搜，大写完全匹配)
-set smartcase
-"set gdefault
-set incsearch
-set showmatch
-set hlsearch
-
-set numberwidth=4          "行号栏的宽度
-"set columns=135           "初始窗口的宽度
-"set lines=50              "初始窗口的高度
-"winpos 620 45             "初始窗口的位置
-
-set whichwrap=b,s,<,>,[,]  "让退格，空格，上下箭头遇到行首行尾时自动移到下一行（包括insert模式）
-
-"插入模式下移动
-inoremap <c-j> <down>
-inoremap <c-k> <up>
-inoremap <c-l> <right>
-inoremap <c-h> <left>
+set fenc=utf-8
+set ffs=unix,dos,mac
+"}
 
 "===================================================
-"修改leader键为逗号
+" Key mappings
+"===================================================
 let mapleader=","
-imap jj <esc>
+let g:mapleader=","
 
-"inoremap <F1> <ESC>
-"nnoremap <F1> <ESC>
-"vnoremap <F1> <ESC>
-nnoremap ; :
+" avoid the cursor keys when recalling commands from history.
+cnoremap <C-p> <Up>
+cnoremap <C-n> <Down>
 
-"修改vim的正则表达
+"--------------------------------------------------
+" Visual mode related
+"--------------------------------------------------
+" pressing * or # searches for the current selection
+vnoremap <silent> * :call VisualSelection('f')<cr>
+vnoremap <silent> # :call VisualSelection('b')<cr>
+" vimgrep after the selected text
+vnoremap <silent> gv :call VisualSelection('gv')<cr>
+" search and replace the selected text
+vnoremap <silent> <leader>r :call VisualSelection('replace')<cr>
+
+"--------------------------------------------------
+" Insert mode related
+"--------------------------------------------------
+inoremap jj <esc>
+
+"插入模式下移动
+inoremap <m-j> <down>
+inoremap <m-k> <up>
+inoremap <m-h> <left>
+inoremap <m-l> <right>
+" <c-a> is used to repeat last entered text. override it.
+inoremap <m-a> <home>
+inoremap <m-e> <end>
+
+" <c-j> insert newline
+" <c-k>: to insert special characters. now use <c-m> instead
+inoremap <c-m> <c-k>
+" delete everything to the right of cursor
+inoremap <c-k> <esc><right>C
+" <c-h> backspace
+inoremap <c-l> <del>
+" <c-t> indent current line
+" <c-d> un-indent current line
+
+" 模拟 Emacs 键绑定
+inoremap <c-a> <home>
+inoremap <c-e> <end>
+"inoremap <c-p> <up>
+"inoremap <c-n> <down>
+inoremap <c-b> <left>
+inoremap <c-f> <right>
+inoremap <m-b> <c-o>b
+inoremap <m-f> <c-o>w
+"inoremap <c-u> <esc>d0cl
+"inoremap <c-w> <esc>dbcl
+" delete everything to the right of cursor
+"inoremap <c-k> <c-o>D
+" delete the next character: <del>
+inoremap <c-d> <esc><right>s
+" kill the next word
+"inoremap <m-d> <C-o>de
+
+" to recover lost text, Esc to normal mode and undo
+inoremap <c-h> <c-g>u<c-h>
+inoremap <c-u> <c-g>u<c-u>
+inoremap <c-w> <c-g>u<c-w>
+inoremap <del> <c-g>u<del>
+inoremap <BS>  <c-g>u<BS>
+
+" <c-z> undo, <c-y> redo
+noremap <c-z> u
+inoremap <c-z> <c-o>u
+"noremap <c-y> <c-r>
+"inoremap <c-y> <c-o><c-r>
+inoremap <silent> <c-s> <esc>:w<cr>i
+noremap <silent> <C-s> :w<CR>
+nnoremap <leader>w :w!<cr>
+
+"--------------------------------------------------
+
+" managing windows
+nnoremap <silent> [w <c-w>W
+nnoremap <silent> ]w <c-w>w
+nnoremap <silent> [W <c-w>t
+nnoremap <silent> ]W <c-w>b
+nnoremap <leader>wv <c-w>v<c-w>l
+nnoremap <leader>ws <c-w>s
+nnoremap <leader>wc <c-w>c
+nnoremap <leader>ww <c-w>w
+nnoremap <leader>wo <c-w>o
+nnoremap <leader>wj <c-w>j
+nnoremap <leader>wk <c-w>k
+nnoremap <leader>wh <c-w>h
+
+" managing buffers
+" https://github.com/tpope/vim-unimpaired
+nnoremap <silent> [b :bprevious<CR>
+nnoremap <silent> ]b :bnext<CR>
+nnoremap <silent> [B :bfirst<CR>
+nnoremap <silent> ]B :blast<CR>
+nnoremap <silent> <leader>bo :only<cr>
+nnoremap <silent> <leader>bl :buffers<cr>
+nnoremap <silent> <leader>bc :Bclose<cr>
+nnoremap <silent> <leader>bd :bd<cr>
+nnoremap <silent> <leader>bdd :bd!<cr>
+nnoremap <silent> <leader>ba :1,1000 bd!<cr>
+nnoremap <silent> <leader>be :edit <c-r>=expand("%:p:h")<cr>/
+
+" managing tabs
+nnoremap <silent> ]t gt
+nnoremap <silent> [t gT
+nnoremap <silent> [T :tabfirst<cr>
+nnoremap <silent> ]T :tablast<cr>
+nnoremap <silent> <leader>tn :tabnew<cr>
+nnoremap <silent> <leader>tc :tabclose<cr>
+nnoremap <silent> <leader>to :tabonly<cr>
+nnoremap <silent> <leader>tm :tabmove
+" open a new tab to edit files in the same directory
+nnoremap <silent> <leader>te :tabedit <c-r>=expand("%:p:h")<cr>/
+
+nnoremap <leader>cd :cd "%:p:h"<cr>:pwd<cr>
+
+" cope: quickfix
+nnoremap <silent> <leader>fn :botright cope<cr>
+nnoremap <silent> <leader>fe ggVGy:tabnew<cr>:set syntax=qf<cr>pgg
+nnoremap <silent> [f :cp<cr>
+nnoremap <silent> ]f :cn<cr>
+nnoremap <silent> [F :cfirst<cr>
+nnoremap <silent> ]F :clast<cr>
+
+"--------------------------------------------------
+
+" 为方便复制，开启/关闭行号显示：
+"nnoremap <F3> :set nonumber!<CR>:set foldcolumn=0<CR>
+
+" treat long lines as break lines
+nnoremap j gj
+nnoremap k gk
+
+" simplify regular expressions using 'very magic'
+" make every following character except a-zA-Z0-9
+" and '-' have special meaning.
 nnoremap / /\v
 vnoremap / /\v
 
-"使用tab键来代替%进行匹配跳转
-"nnoremap <tab> %
-"vnoremap <tab> %
-
-"折叠html标签 ,fold tag
-nnoremap <leader>ft vatzf
 "使用,v来选择刚刚复制的段落，这样可以用来缩进
 nnoremap <leader>v v`]
 
-"使用,w来垂直分割窗口，这样可以同时查看多个文件,如果想水平分割则<c-w>s
-nnoremap <leader>w <c-w>v<c-w>l
-nnoremap <leader>wc <c-w>c
-nnoremap <leader>ww <c-w>w
-
-"tab切换
-nnoremap <leader>t gt
-nnoremap <leader>r gT
-"使用<leader>空格来取消搜索高亮
-nnoremap <leader><space> :noh<cr>
-
-"html中的js加注释 取消注释
-nmap <leader>h I//jj
-nmap <leader>ch ^xx
-"切换到当前目录
-nmap <leader>q :execute "cd" expand("%:h")<CR>
-"搜索替换
-nmap <leader>s :,s///c
+nnoremap <silent> <leader><space> :noh<cr>
+nnoremap <silent> <C-l> :<C-u>nohlsearch<CR><C-l>
 
 "取消粘贴缩进
 nmap <leader>p :set paste<CR>
 nmap <leader>pp :set nopaste<CR>
+" VimTip21 is spot on but the title suggests it's for MS Windows only.
+" It also mentions that we can change out settings so
+" the "anonymous" register is aliased to the * register using:
+set clipboard=unnamed
 
-"文件类型切换
-nmap <leader>fj :set ft=javascript<CR>
-nmap <leader>fc :set ft=css<CR>
-nmap <leader>fx :set ft=xml<CR>
-nmap <leader>fm :set ft=mako<CR>
-
-"设置隐藏gvim的菜单和工具栏 F2切换
-set guioptions-=m
-set guioptions-=T
-"去除左右两边的滚动条
-set go-=r
-set go-=L
-
-map <silent> <F2> :if &guioptions =~# 'T' <Bar>
-        \set guioptions-=T <Bar>
-        \set guioptions-=m <bar>
-    \else <Bar>
-        \set guioptions+=T <Bar>
-        \set guioptions+=m <Bar>
-    \endif<CR>
-
-
-"Indent Guides设置
-"let g:indent_guides_guide_size=1
-
+"==================================================
+" coding
+"==================================================
 
 " code completion {
 " Ctrl-N, Ctrl-P
@@ -205,31 +343,26 @@ inoremap <expr> <Down>     pumvisible() ? "\<C-n>" : "\<Down>"
 inoremap <expr> <Up>       pumvisible() ? "\<C-p>" : "\<Up>"
 inoremap <expr> <PageDown> pumvisible() ? "\<PageDown>\<C-p>\<C-n>" : "\<PageDown>"
 inoremap <expr> <PageUp>   pumvisible() ? "\<PageUp>\<C-p>\<C-n>" : "\<PageUp>"
-" AutoComplPop plugin
-"let g:acp_completeoptPreview=1
 " }
 
+"--------------------------------------------------
 " code navigation {
-" gd, GD, *, #, g*, g#
+" gd, gD, *, #, g*, g#
 " [[, ]], %
 " Ctrl-O, Ctrl-I
 " ctags: {
 " ctags -R .
-set tags=tags;../tags
+set tags=./tags,../tags,tags
 " Ctrl-], Ctrl-T: go to last match, g Ctrl-]: show all possible tags
 nnoremap <c-]> g<c-]>
 vnoremap <c-]> g<c-]>
 nnoremap g<c-]> <c-]>
 vnoremap g<c-]> <c-]>
+" autocmd BufWritePost * call system("ctags -R")
 " }
 " }
 
-" compile and fix errors {
-" show quickfix window on compilation errors
-autocmd QuickFixCmdPost [^l]* nested cwindow
-autocmd QuickFixCmdPost    l* nested lwindow
-" }
-
+"--------------------------------------------------
 " code folding {
 " za: toggle current folding
 set foldmethod=syntax
@@ -237,25 +370,107 @@ set foldmethod=syntax
 set foldlevel=99
 " }
 
+"--------------------------------------------------
+" compile and fix errors {
+" show quickfix window on compilation errors
+autocmd QuickFixCmdPost [^l]* nested cwindow
+autocmd QuickFixCmdPost    l* nested lwindow
+" }
+
+
 " K: show document of method under cursor?
 
-" 模拟 Emacs 键绑定
-" Move
-inoremap <C-a> <Home>
-inoremap <C-e> <End>
-"inoremap <C-p> <Up>
-"inoremap <C-n> <Down>
-inoremap <C-b> <Left>
-inoremap <C-f> <Right>
-inoremap <M-b> <C-o>b
-inoremap <M-f> <C-o>w
-" Rubout word / line and enter insert mode
-" use <Esc><Right> instead of <C-o>
-inoremap <C-w> <Esc>dbcl
-" delete
-inoremap <C-u> <Esc>d0cl
-inoremap <C-k> <Esc><Right>C
-inoremap <C-d> <Esc><Right>s
-inoremap <M-d> <C-o>de
-" }
+"==================================================
+" autocmd
+"==================================================
+
+"自动载入配置文件不需要重启
+"autocmd bufwritepost _vimrc source %
+
+nnoremap <leader>ss :so ~/_vimrc<cr>
+
+autocmd filetype python set omnifunc=pythoncomplete#Complete
+autocmd filetype c      set omnifunc=ccomplete#Complete
+
+autocmd bufwrite *.py :call DeleteTrailingWS()
+autocmd bufwrite *.cpp :call DeleteTrailingWS()
+autocmd bufwrite *.h :call DeleteTrailingWS()
+
+" return to last edit position when opening files
+autocmd BufReadPost *
+    \ if line("'\"") > 0 && line("'\"") <= line("$") |
+    \     execute "normal! g`\"" |
+    \ endif
+" remember info about open buffers on close
+set viminfo^=%
+
+"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+" Helper functions
+"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+function! CmdLine(str)
+    exe "menu Foo.Bar :" . a:str
+    emenu Foo.Bar
+    unmenu Foo
+endfunction
+
+function! VisualSelection(direction) range
+    let l:saved_reg = @"
+    execute "normal! vgvy"
+
+    let l:pattern = escape(@", '\\/.*$^~[]')
+    let l:pattern = substitute(l:pattern, "\n$", "", "")
+
+    if a:direction == 'b'
+        execute "normal ?" . l:pattern . "^M"
+    elseif a:direction == 'gv'
+        call CmdLine("vimgrep " . '/'. l:pattern . '/' . ' **/*.')
+    elseif a:direction == 'replace'
+        call CmdLine("%s" . '/'. l:pattern . '/')
+    elseif a:direction == 'f'
+        execute "normal /" . l:pattern . "^M"
+    endif
+
+    let @/ = l:pattern
+    let @" = l:saved_reg
+endfunction
+
+function! DeleteTrailingWS()
+    execute "normal mz"
+    %s/\s\+$//ge
+    execute "normal `z"
+endfunction
+
+" Don't close window, when deleting a buffer
+command! Bclose call <SID>BufcloseCloseIt()
+function! <SID>BufcloseCloseIt()
+    let l:currentBufNum = bufnr("%")
+    let l:alternateBufNum = bufnr("#")
+
+    if buflisted(l:alternateBufNum)
+        buffer #
+    else
+        bnext
+    endif
+
+    if bufnr("%") == l:currentBufNum
+        new
+    endif
+
+    if buflisted(l:currentBufNum)
+        execute("bdelete! ".l:currentBufNum)
+    endif
+endfunction
+
+" pipe the output of a command into a new tab.
+" example usage:
+" :TabMessage highlight
+function! TabMessage(cmd)
+    redir => message
+    silent execute a:cmd
+    redir END
+    tabnew
+    silent put=message
+    set nocompatible
+endfunction
+command! -nargs=+ -complete=command TabMessage call TabMessage(<q-args>)
 

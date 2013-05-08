@@ -72,7 +72,7 @@ Bundle 'mbbill/fencview'
 Bundle 'orenhe/pylint.vim'
 Bundle 'Pydiction'
 Bundle 'ervandew/supertab'
-Bundle 'sontek/minibufexpl.vim'
+"Bundle 'sontek/minibufexpl.vim'
 Bundle 'kevinw/pyflakes'
 
 Bundle 'taglist.vim'
@@ -92,8 +92,10 @@ syntax on
 
 "set undofile   "无限undo
 set history=10000
-set noswapfile
-set nobackup
+set swapfile
+set directory=~/backup
+set backup
+set backupdir=~/backup
 
 set modeline   " 允许被编辑的文件以注释的形式设置Vim选项
 set autoread
@@ -104,6 +106,7 @@ set incsearch
 set hlsearch
 set magic
 set gdefault    " When on, the ":substitute" flag 'g' is default on.
+set grepprg=grep\ -nH\ $*
 
 set lazyredraw  " don't redraw while executing macros
 
@@ -118,9 +121,11 @@ set wildignore=*.o,*~,*.pyc
 " VIM user interface
 "===================================================
 
-set scrolloff=4
 let loaded_matchparen = 1
 set showmatch
+nnoremap % :let line=line(".")<cr>%:echo line(".") - line<cr>
+
+set scrolloff=4
 set hidden
 set laststatus=2
 set number
@@ -156,12 +161,12 @@ if has("gui_running")
     set guioptions-=r
     set guioptions-=L
     map <silent> <F8> :if &guioptions =~# 'T' <bar>
-            \set guioptions-=T <bar>
-            \set guioptions-=m <bar>
-        \else <bar>
-            \set guioptions+=T <bar>
-            \set guioptions+=m <bar>
-        \endif<cr>
+                \set guioptions-=T <bar>
+                \set guioptions-=m <bar>
+                \else <bar>
+                \set guioptions+=T <bar>
+                \set guioptions+=m <bar>
+                \endif<cr>
 endif
 
 "--------------------------------------------------
@@ -171,10 +176,13 @@ set tabstop=4
 set shiftwidth=4
 set softtabstop=4
 set expandtab
+
 set autoindent
 "set smartindent    " only for C and obsolete (replaced by 'cindent')
 set cindent    " enable automatic C program indenting.
-"}
+
+set fo+=mB
+set linebreak
 
 "--------------------------------------------------
 " encoding settings 编码
@@ -196,6 +204,7 @@ if has("gui_running")
     source $VIMRUNTIME/menu.vim
     language messages zh_CN.utf-8
 else
+    " FIXME: the same as locale?
     set termencoding=cp936
     set encoding=cp936
 endif
@@ -354,8 +363,10 @@ nnoremap k gk
 " simplify regular expressions using 'very magic'
 " make every following character except a-zA-Z0-9
 " and '-' have special meaning.
-nnoremap / /\v<
+nnoremap / /\v
 vnoremap / /\v
+nnoremap ? ?\v
+vnoremap ? ?\v
 
 "使用,v来选择刚刚复制的段落，这样可以用来缩进
 nnoremap <leader>v v`]
@@ -381,8 +392,17 @@ set clipboard=unnamed
 " code completion
 "--------------------------------------------------
 " Ctrl-N, Ctrl-P
-" Omin Complete: Ctrl-X Ctrl-O
+" <c-x><c-n> current buffer keywords
+" <c-x><c-i> included file keywords
+" <c-x><c-]> tags file keywords
+" <c-x><c-k> directory lookup
+" <c-x><c-l> whole line completion
+" <c-x><c-f> filename completion
+" <c-x><c-o> omni-completion
+
 set completeopt+=longest,menu
+" enable completion of words in the spelling dictionary
+"set complete+=k
 
 autocmd InsertLeave * if pumvisible() == 0|pclose|endif
 inoremap <expr> <cr>       pumvisible() ? "\<c-y>" : "\<cr>"
@@ -412,6 +432,11 @@ function! SetupPythonIDE()
 
     let g:pyflakes_use_quickfix = 0
 
+    " http://vim.wikia.com/wiki/Continue_omnicompletion_for_python_modules
+    imap <silent> <expr> <buffer> <CR> pumvisible() ? "<CR><C-R>=(col('.')-1&&match(getline(line('.')), '\\.',
+                \ col('.')-2) == col('.')-2)?\"\<lt>C-X>\<lt>C-O>\":\"\"<CR>"
+                \ : "<CR>"
+
 endfunction
 
 "--------------------------------------------------
@@ -425,13 +450,27 @@ endfunction
 " ctags: http://ctags.sourceforge.net/
 "--------------------------------------------------
 " ctags -R .
-set tags=./tags,../tags,tags
+set tags+=../tags,../../tags,../../../tags
 " Ctrl-], Ctrl-T: go to last match, g Ctrl-]: show all possible tags
 nnoremap <c-]> g<c-]>
 vnoremap <c-]> g<c-]>
 nnoremap g<c-]> <c-]>
 vnoremap g<c-]> <c-]>
 " autocmd BufWritePost * call system("ctags -R")
+
+" update tags automatically on file save
+au! BufWritePost *.[ch] call Update_tags()
+au! BufWritePost *.[ch]pp call Update_tags()
+au! BufWritePost *.py call Update_tags()
+
+" set up a preview window that works like
+" SourceInsight's Reference window
+" see vim doc 'windows.txt'
+au! CursorHold *.[ch] nested call PreviewWord()
+au! CursorHold *.[ch]pp nested call PreviewWord()
+au! CursorHold *.py nested call PreviewWord()
+"au! CursorHold * nested call PreviewWord()
+set updatetime=500
 
 "--------------------------------------------------
 " cscope: http://sourceforge.net/projects/mslk/
@@ -445,7 +484,7 @@ set cscopeverbose
 command! -nargs=0 Cscope execute "cs add " . expand("%:p:h") . "/cscope.out"
 " build cscope database
 nmap <F11> :!cscope -bv *.h *.cpp *.py *.cs *.java *.hpp *.c<CR>
-  \:cs reset<CR>
+            \:cs reset<CR>
 
 " :CscopeGen /dir
 " ,fs    find this C symbol
@@ -489,11 +528,13 @@ autocmd bufwrite *.h :call DeleteTrailingWS()
 
 " return to last edit position when opening files
 autocmd BufReadPost *
-    \ if line("'\"") > 0 && line("'\"") <= line("$") |
-    \     execute "normal! g`\"" |
-    \ endif
+            \ if line("'\"") > 0 && line("'\"") <= line("$") |
+            \     execute "normal! g`\"" |
+            \ endif
 " remember info about open buffers on close
 set viminfo^=%
+
+autocmd filetype text setlocal textwidth=78
 
 """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 " Helper functions
@@ -586,4 +627,79 @@ function! TabMessage(cmd)
     set nocompatible
 endfunction
 command! -nargs=+ -complete=command TabMessage call TabMessage(<q-args>)
+
+
+function! Update_tags()
+    " FIXME: may not work on Windows
+    if filewritable("./tags")
+        call system("rm tags; ctags -R")
+    elseif filewritable("../tags")
+        call system("cd ..; rm tags; ctags -R ")
+    elseif filewritable("../../tags")
+        call system("cd ../..; rm tags; ctags -R")
+    endif
+endfunction
+
+
+function! PreviewWord()
+    if &previewwindow         " don't do this in the preview window
+        return
+    endif
+    let w = expand("<cword>") " get the word under cursor
+    if w =~ '\a'              " if the word contains a letter
+
+        " Delete any existing highlight before showing another tag
+        silent! wincmd P        " jump to preview window
+        if &previewwindow       " if we really get there...
+            match none            " delete existing highlight
+            wincmd p              " back to old window
+        endif
+
+        " Try displaying a matching tag for the word under the cursor
+        try
+            exe "silent! ptag " . w
+        catch
+            return
+        endtry
+
+        silent! wincmd P        " jump to preview window
+        if &previewwindow       " if we really get there...
+            if has("folding")
+                silent! .foldopen    " don't want a closed fold
+            endif
+            call search("$", "b")  " to end of previous line
+            let w = substitute(w, '\\', '\\\\', "")
+            call search('\<\V' . w . '\>') " position cursor on match
+            " Add a match highlight to the word at this position
+            hi previewWord term=bold ctermbg=green guibg=green
+            exe 'match previewWord "\%' . line(".") . 'l\%' . col(".") . 'c\k*"'
+            wincmd p              " back to old window
+        endif
+    endif
+endfun
+
+
+" FIXME: may not work on Windows
+function! MakeSession()
+    let b:sessiondir = $HOME . "/.vim/sessions" . getcwd()
+    if (filewritable(b:sessiondir) != 2)
+        exe 'silent !mkdir -p ' b:sessiondir
+        redraw!
+    endif
+    let b:filename = b:sessiondir . '/session.vim'
+    exe "mksession! " . b:filename
+endfunction
+
+function! LoadSession()
+    let b:sessiondir  = $HOME . "/.vim/sessions" . getcwd()
+    let b:sessionfile = b:sessiondir . "/session.vim"
+    if (filereadable(b:sessionfile))
+        exe 'source ' b:sessionfile
+    else
+        echo "No session loaded."
+    endif
+endfunction
+
+"au VimEnter * :call LoadSession()
+"au VimLeave * :call MakeSession()
 

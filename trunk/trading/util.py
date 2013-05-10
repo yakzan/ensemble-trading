@@ -22,3 +22,4 @@ def dump_exception(to_std=1):
 def open_for_write(filename, mode='w'):
     ensure_dir(filename)
     return open(filename, mode)
+

@@ -86,7 +86,7 @@ def get_perf_metrics_values_from_file(symbol, result_file_name=''):
     return get_perf_metrics_values(predicted_values, actual_values)
 
 def save_perf_metrics(symbol, NMSE, MAE, DS, WDS, RMSE, svm_train_param=''):
-    perf_metrics_file = open('../data/result/%s-perf-metrics.txt' % symbol, 'a+')
+    perf_metrics_file = open_for_write('../data/result/%s-perf-metrics.txt' % symbol, 'a+')
     result_str = '%-10s\tNMSE=%.4f\tMAE=%.4f\tDS=%.4f\tWDS=%.4f\tRMSE=%.4f\t%s' % (symbol, NMSE, MAE, DS, WDS, RMSE, svm_train_param)
     print result_str
     print >>perf_metrics_file, result_str

@@ -245,7 +245,8 @@ def get_onemin_file(symbol):
     return '../data/1min/%s_1.txt' % symbol
 
 def get_onemincomp_file(symbol):
-    return '../data/1min-comp/%s_1.bin' % symbol
+    return '../data/1min-comp-etf/%s_1.dat' % symbol
+    #return '../data/1min-comp/%s_1.bin' % symbol
 
 def get_old_onemincomp_file(symbol):
     return '../data/1min-comp/%s_1.dat' % symbol

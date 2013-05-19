@@ -21,18 +21,18 @@ let g:autoclose_on=0
 nmap <leader>x <Plug>ToggleAutoCloseMappings
 
 Bundle 'ctrlp.vim'
-Bundle 'ZenCoding.vim'
+"Bundle 'ZenCoding.vim'
 Bundle 'matchit.zip'
 Bundle 'Tabular'
 "Bundle 'Valloric/YouCompleteMe'
 Bundle 'spiiph/vim-space'
 Bundle 'trailing-whitespace'
-Bundle 'Tagbar'
-Bundle 'Syntastic'
-Bundle 'surround.vim'
+"Bundle 'Tagbar'
+"Bundle 'Syntastic'
+"Bundle 'surround.vim'
 
-Bundle '_jsbeautify'
-nnoremap <leader>_ff :call g:Jsbeautify()<cr>
+"Bundle '_jsbeautify'
+"nnoremap <leader>_ff :call g:Jsbeautify()<cr>
 
 Bundle 'EasyMotion'
 let g:EasyMotion_leader_key = '<leader><leader>'
@@ -69,11 +69,16 @@ let g:acp_completeoptPreview=1
 Bundle 'mbbill/fencview'
 "let g:fencview_autodetect=1
 
-Bundle 'orenhe/pylint.vim'
+"Bundle 'orenhe/pylint.vim'
 Bundle 'Pydiction'
 Bundle 'ervandew/supertab'
-"Bundle 'sontek/minibufexpl.vim'
-Bundle 'kevinw/pyflakes'
+Bundle 'sontek/minibufexpl.vim'
+"Bundle 'kevinw/pyflakes'
+
+Bundle 'klen/python-mode'
+" Disable pylint checking every save
+let g:pymode_lint_write = 0
+let g:pylint_onwrite=0
 
 Bundle 'taglist.vim'
 let Tlist_Show_One_File=1
@@ -150,7 +155,7 @@ autocmd VimEnter * set vb t_vb=
 colorscheme desert
 "colorscheme murphy
 set background=dark
-set guifont=Consolas:h11
+set guifont=Consolas:h9
 
 if has("gui_running")
     set t_Co=256
@@ -263,6 +268,7 @@ inoremap <c-l> <del>
 " 模拟 Emacs 键绑定
 inoremap <c-a> <home>
 inoremap <c-e> <end>
+nnoremap <c-e> <end>
 inoremap <c-p> <up>
 inoremap <c-n> <down>
 inoremap <c-b> <left>
@@ -305,6 +311,7 @@ nnoremap <silent> ]W <c-w>b
 nnoremap <leader>wv <c-w>v<c-w>l
 nnoremap <leader>ws <c-w>s
 nnoremap <leader>wc <c-w>c
+nnoremap <F4>       <c-w>c
 nnoremap <leader>ww <c-w>w
 nnoremap <leader>wo <c-w>o
 nnoremap <leader>wj <c-w>j
@@ -468,8 +475,10 @@ au! BufWritePost *.py call Update_tags()
 " see vim doc 'windows.txt'
 au! CursorHold *.[ch] nested call PreviewWord()
 au! CursorHold *.[ch]pp nested call PreviewWord()
-au! CursorHold *.py nested call PreviewWord()
+"au! CursorHold *.py nested call PreviewWord()
 "au! CursorHold * nested call PreviewWord()
+nnoremap <F3> :call PreviewWord()<cr>
+nnoremap <c-F3> <c-w><c-]>
 set updatetime=500
 
 "--------------------------------------------------
@@ -483,8 +492,10 @@ set cscopeverbose
 
 command! -nargs=0 Cscope execute "cs add " . expand("%:p:h") . "/cscope.out"
 " build cscope database
-nmap <F11> :!cscope -bv *.h *.cpp *.py *.cs *.java *.hpp *.c<CR>
+nmap <F11> :!cscope -bvR *.h *.cpp *.py *.cs *.java *.hpp *.c<CR>
             \:cs reset<CR>
+nmap <c-F11> :!dir /b/s *.c *.cpp *.h *.py *.hpp *.inc > cscope.files<cr>
+            \:!cscope -b<cr>
 
 " :CscopeGen /dir
 " ,fs    find this C symbol
@@ -642,11 +653,15 @@ endfunction
 
 
 function! PreviewWord()
-    if &previewwindow         " don't do this in the preview window
-        return
-    endif
     let w = expand("<cword>") " get the word under cursor
     if w =~ '\a'              " if the word contains a letter
+        if &previewwindow         " don't do this in the preview window
+            exe "silent! tag " . w
+            return
+        endif
+
+        let winWidth = winwidth(0)
+        exe 'normal mz'
 
         " Delete any existing highlight before showing another tag
         silent! wincmd P        " jump to preview window
@@ -657,7 +672,11 @@ function! PreviewWord()
 
         " Try displaying a matching tag for the word under the cursor
         try
-            exe "silent! ptag " . w
+            if winWidth > 160
+                exe "silent! vert ptag " . w
+            else
+                exe "silent! ptag " . w
+            endif
         catch
             return
         endtry
@@ -671,10 +690,12 @@ function! PreviewWord()
             let w = substitute(w, '\\', '\\\\', "")
             call search('\<\V' . w . '\>') " position cursor on match
             " Add a match highlight to the word at this position
-            hi previewWord term=bold ctermbg=green guibg=green
+            hi previewWord term=bold ctermbg=green guibg=lightblue
             exe 'match previewWord "\%' . line(".") . 'l\%' . col(".") . 'c\k*"'
             wincmd p              " back to old window
         endif
+
+        exe 'silent! normal `z'
     endif
 endfun
 

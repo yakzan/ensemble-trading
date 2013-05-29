@@ -11,9 +11,11 @@ import os
 import time
 import shutil
 import logging
+from multiprocessing import Process, Queue
 
 logger = 0
 log_dir = ''
+total_instances = 4
 
 def simple_partition_svm_lines(svm_lines_training, MIN_PARTITION_SIZE):
     MIN_PARTITION_SIZE = int(MIN_PARTITION_SIZE)
@@ -24,6 +26,7 @@ def simple_partition_svm_lines(svm_lines_training, MIN_PARTITION_SIZE):
         else:
             partitions[-1] += svm_lines_training[i:len(svm_lines_training)]
     return partitions
+
 
 def simple_partition_svm_lines_random(svm_lines_training, MIN_PARTITION_SIZE):
     MIN_PARTITION_SIZE = int(MIN_PARTITION_SIZE)
@@ -40,6 +43,7 @@ def simple_partition_svm_lines_random(svm_lines_training, MIN_PARTITION_SIZE):
         partitions.append(partition)
     return partitions
 
+
 def test_symbol(data, num_partitions_to_keep=10, fixed_gamma=0.05, fixed_epsilon=0.001, use_random_partition=0, verbose=0, dump_partition_result=0, params=None):
 
     symbol = data.symbol
@@ -55,8 +59,8 @@ def test_symbol(data, num_partitions_to_keep=10, fixed_gamma=0.05, fixed_epsilon
     changes = [abs(line[-3] - line[-2]) / line[-2] for line in extended_svm_lines]
     max_changes = max(changes)
 
-    f_out_name = os.path.join(log_dir, '%s_%d_%d.csv' % (
-        symbol, data.source, data.interval))
+    f_out_name = os.path.join(log_dir, '%s_i%d_d%d_g%f_e%f.csv' % (
+        symbol, data.interval, data.time_delay, fixed_gamma, fixed_epsilon))
     f_out = open(f_out_name, 'w')
 
     MIN_PARTITION_SIZE = 30
@@ -306,19 +310,23 @@ def test_symbol(data, num_partitions_to_keep=10, fixed_gamma=0.05, fixed_epsilon
     print '-' * 20
     logger.info('-' * 20)
 
-def save_settings():
+
+def save_settings(argv, timestamp, instance_num):
 
     global logger
     global log_dir
 
-    this_file = sys.argv[0]
+    this_file = argv[0]
 
     log_dir = '../results/%s-%s' % (
             this_file,
-            time.strftime('%Y%m%d-%H%M%S', time.localtime()))
+            timestamp)
     log_file = os.path.join(log_dir, 'log.txt')
+    if instance_num != -1:
+        log_file = os.path.join(log_dir, 'log_%d.txt' % instance_num)
     ensure_dir(log_file)
-    shutil.copy(this_file, log_dir)
+    if instance_num == -1 or instance_num == 0:
+        shutil.copy(this_file, log_dir)
 
     logger = logging.getLogger()
     hdlr = logging.FileHandler(log_file)
@@ -327,30 +335,13 @@ def save_settings():
     logger.addHandler(hdlr)
     logger.setLevel(logging.DEBUG)
 
-    logger.info(repr(sys.argv))
+    logger.info(repr(argv))
 
-def main():
+
+def main_worker(symbols, timestamp, instance_num):
     global logger
 
-    save_settings()
-
-    instance_num = -1
-    total_instances = 4
-    if len(sys.argv) > 1:
-        instance_num = int(sys.argv[1]) % total_instances
-
-    dimension = 5
-    delay = 2
-    num_partitions = 200
-    epsilon = 0.001
-    gamma = 0.0001
-
-    symbols = []
-    flist = glob.glob(r'../data/1min-comp-etf/*_1.dat')
-    for file in flist:
-        basename = os.path.basename(file)
-        symbol = basename[:-6]
-        symbols.append(symbol)
+    save_settings(sys.argv, timestamp, instance_num)
 
     if instance_num != -1:
         n = len(symbols)
@@ -363,20 +354,43 @@ def main():
     logger.info('%d symbols' % (len(symbols)))
     logger.debug(','.join(symbols))
 
-    for interval in [5, 30, 120]:
+    dimension = 5
+    #delay = 2
+    num_partitions = 200
+    epsilon = 0.001
+    #gamma = 0.0001
+
+    for interval in [5, 10, 1]: #[5, 30, 120]:
         for symbol in symbols:
-            try:
-                print symbol, interval
-                logger.info('%s interval=%d' % (symbol, interval))
-                svm_data = SvmData(symbol, SvmData.ONE_MIN_COMP, interval)
-                svm_data.set_settings(portion_training=0.8)
-                svm_data.set_dimension_delay(dimension, delay)
-                test_symbol(svm_data, num_partitions_to_keep=num_partitions, fixed_gamma=gamma, fixed_epsilon=epsilon, verbose=1, use_random_partition=0)
-            except:
-                print symbol, interval, 'failed'
-                logger.info('%s interval=%d failed' % (symbol, interval))
-                dump_exception()
-                pass
+            for gamma in [0.0001]: #[1, 0.1, 0.001, 0.0001]:
+                for delay in [1]: #[1, 2]: #[1, 2, 3, 4, 5, 6]:
+                    try:
+                        print symbol, interval
+                        logger.info('%s interval=%d' % (symbol, interval))
+                        svm_data = SvmData(symbol, SvmData.ONE_MIN_COMP, interval)
+                        svm_data.set_settings(portion_training=0.5)
+                        svm_data.set_dimension_delay(dimension, delay)
+                        test_symbol(svm_data, num_partitions_to_keep=num_partitions, fixed_gamma=gamma, fixed_epsilon=epsilon, verbose=1, use_random_partition=0)
+                    except:
+                        print symbol, interval, 'failed'
+                        logger.info('%s interval=%d failed' % (symbol, interval))
+                        dump_exception()
+                        pass
+
+def main():
+
+    symbols = []
+    flist = glob.glob(r'../data/1min-comp-etf/*_1.dat')
+    for file in flist:
+        basename = os.path.basename(file)
+        symbol = basename[:-6]
+        symbols.append(symbol)
+
+    timestamp = time.strftime('%Y%m%d-%H%M%S', time.localtime())
+
+    for i in range(total_instances):
+        p = Process(target=main_worker, args=(symbols, timestamp, i))
+        p.start()
 
 if __name__ == '__main__':
     main()

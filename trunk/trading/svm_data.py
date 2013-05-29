@@ -95,10 +95,10 @@ def onemincomp_to_bars(filename):
             try:
                 dd2, tt2, p1, p2 = struct.unpack('<HHHH', buf[i:i+8])
 
-                y = dd2 / (13*32) + 2000
-                M = dd2 % (13*32) / 32
+                # dd2 = ((y - 2000) * 13 + M) * 32 + d
+                y = dd2 / 32 / 13 + 2000
+                M = dd2 / 32 % 13
                 d = dd2 % 32
-
 
                 h, m = tt2 / 60, tt2 % 60
                 price = p1 + p2 * 0.01
@@ -731,9 +731,11 @@ def ema(ema_values, i, period):
     return ema_values[i - period + 1]
 
 if __name__ == '__main__':
-    data = SvmData('SPY', source=SvmData.ONE_MIN_COMP)
+    data = SvmData('AGG', source=SvmData.ONE_MIN_COMP)
     bars = data.bars
-    data.prepare_svm_lines()
+    #data.prepare_svm_lines()
+    for bar in bars:
+        print bar
     raise 1
 
     for symbol in ['AORD', 'DJI', 'GE', 'HSI', 'KS11', 'Nikkei225']:

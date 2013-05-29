@@ -10,8 +10,9 @@ def analyze_result(symbol, filename, interval, desc='DESC'):
 
     f = open(filename)
     f3 = None
-    plot_input = filename.replace('results', 'plots')
-    plot_input = plot_input.replace('csv', 'txt')
+    plot_input = filename.replace('csv', 'txt')
+    first_dt = None
+    last_dt = None
     for line in f:
         line = line.strip()
         if not line:
@@ -27,6 +28,9 @@ def analyze_result(symbol, filename, interval, desc='DESC'):
         equity = float(equity)
         predicted_value = float(predicted_value)
         dt2 = dt.replace(' ', '').replace('/', '').replace(':', '')
+        if first_dt is None:
+            first_dt = dt2
+        last_dt = dt2
 
         if not f3:
             #f3 = open_for_write('../plot-6/%s_%d.txt' % (symbol, interval), 'w')
@@ -63,24 +67,32 @@ def analyze_result(symbol, filename, interval, desc='DESC'):
     print >> f2, result_line
     f2.close()
 
-    result_line2 = '<STOPLOSS> %s PNL=%.4f TRADES=%d PNL/TRADE=%.6f MAX_DD=%.2f%% %d' % (
-        symbol, total_pnl, trades, total_pnl / trades, max_drawdown * 100, interval) #set y2range [100000:300000];
+    result_line2 = '<STOPLOSS>(%s -> %s) %s PNL=%.4f TRADES=%d PNL/TRADE=%.6f MAX_DD=%.2f%% %d' % (
+        first_dt, last_dt, symbol, total_pnl, trades, total_pnl / trades, max_drawdown * 100, interval) #set y2range [100000:300000];
     plot_output = plot_input.replace('txt', 'jpg')
-    cmd = '''gnuplot -e "set terminal png size 1800,800; set output '%s'; set y2tics; set tics out; set tics nomirror; unset xtics; plot '%s' using 2 with l lc 5 title 'price', '' using 4 with l lc 4 title 'predicted', '' using 3 with l lc -1 title 'equity' axes x1y2, 100000 axes x1y2 title '%s' " ''' % (plot_output, plot_input, result_line2)
+    img_w, img_h = 1800, 800
+    cmd = '''gnuplot -e "set terminal png size %d,%d; set output '%s'; set y2tics; set tics out; set tics nomirror; unset xtics; plot '%s' using 2 with l lc 5 title 'price', '' using 4 with l lc 4 title 'predicted', '' using 3 with l lc -1 title 'equity' axes x1y2, 100000 axes x1y2 title '%s' " ''' % (img_w, img_h, plot_output, plot_input, result_line2)
     #print cmd
     os.system(cmd)
 
 def main():
     print 'symbol\tPNL\tTRADES\tPNL/TRADE\tMAX_DRAWDOWN\tMAX_EQUITY\tDESC'
-    for file in glob.glob(r'..\results\trading-1.py-20130510-020436\*.csv'):
+    for file in glob.glob(r'..\results\analyze-2.py-20130529-005302\*.csv'):
         basename = os.path.basename(file)
         arr = basename[:-4].split('_')
-        if len(arr) != 3:
+        if len(arr) < 3:
             continue
         symbol = arr[0]
-        interval = int(arr[2])
+        interval = 5
+        if arr[1].startswith('i'):
+            interval = int(arr[1][1:])
+        else:
+            interval = int(arr[2])
         #print file, symbol, interval
-        analyze_result(symbol, file, interval, 'interval=%d, 0.9 for training, holding 10, stoploss, different size' % interval)
+        try:
+            analyze_result(symbol, file, interval, 'interval=%d, 0.5 for training, holding 10, stoploss, different size' % interval)
+        except:
+           pass
 
 main()
 

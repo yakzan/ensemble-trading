@@ -24,6 +24,15 @@ class OneMinBar:
         return '%d, %.02f, %f, %f, %f, %d' % (
             self.date,  self.open,  self.high,  self.low,  self.close,  self.volume)
 
+class ShortOneMinBar:
+    def __init__(self,  _date, _time, _open,  _high,  _low,  _close,  _volume):
+        self.date, self.close= \
+            _date * 10000 + _time, _close
+
+    def __str__(self):
+        return '%d, %.02f, %f' % (
+            self.date, self.close)
+
 # --------------------------------------------------------------------------------
 # yahoo
 # --------------------------------------------------------------------------------
@@ -69,7 +78,7 @@ def onemin_to_bars(filename):
             _low = float(_low)
             _close = float(_close)
             _volume = int(_volume)
-            bar = OneMinBar(_date, _time, _open,  _high,  _low,  _close,  _volume)
+            bar = ShortOneMinBar(_date, _time, _open,  _high,  _low,  _close,  _volume)
             bars.append(bar)
         except ValueError:
             print line
@@ -103,7 +112,7 @@ def onemincomp_to_bars(filename):
                 h, m = tt2 / 60, tt2 % 60
                 price = p1 + p2 * 0.01
 
-                bar = OneMinBar(y * 10000 + M * 100 + d, h * 100 + m,
+                bar = ShortOneMinBar(y * 10000 + M * 100 + d, h * 100 + m,
                     price, price, price, price, 0)
                 #print y, M, d, h, m, '####', bar.close, dd2, tt2, p1, p2, '####%d,%x'% (i, i), buf[i:i+8].encode('hex')
                 bars.append(bar)
@@ -194,7 +203,7 @@ def old_onemincomp_to_bars(filename):
 
                 h, m = tt2 / 60, tt2 % 60
                 price = p1 + p2 * 0.01
-                bar = OneMinBar(y * 10000 + M * 100 + d, h * 100 + m,
+                bar = ShortOneMinBar(y * 10000 + M * 100 + d, h * 100 + m,
                     price, price, price, price, 0)
                 if M * 13 + d != d3:
                     print d3, M*13 + d, M, d
@@ -383,11 +392,13 @@ class SvmData:
         i = 0
         for i in range(len(bars)):
             bar = bars[i]
-            true_range = bar.high - bar.low
+            #true_range = bar.high - bar.low
+            true_range = 0
             if i > 0:
                 last_bar = bars[i-1]
                 pdc = last_bar.close
-                true_range = max(bar.high - bar.low, bar.high - pdc, pdc - bar.low)
+                #true_range = max(bar.high - bar.low, bar.high - pdc, pdc - bar.low)
+                true_range = max(bar.close - pdc, pdc - bar.close)
             true_ranges.append(true_range)
         atrs = []
         for i in range(len(true_ranges)):

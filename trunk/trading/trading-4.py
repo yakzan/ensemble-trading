@@ -48,7 +48,7 @@ def test_symbol(data, num_partitions_to_keep=10, fixed_gamma=0.05, fixed_epsilon
 
     symbol = data.symbol
     data.prepare_svm_lines(verbose=verbose)
-    extended_svm_lines = data.detailed_svm_lines[:]
+    extended_svm_lines = data.detailed_svm_lines[-100000:]
     num_training = int(len(extended_svm_lines) * data.portion_training)
     extended_svm_lines_training = extended_svm_lines[:num_training]
     extended_svm_lines_testing = extended_svm_lines[num_training:]
@@ -298,9 +298,9 @@ def test_symbol(data, num_partitions_to_keep=10, fixed_gamma=0.05, fixed_epsilon
     f_out.close()
     if total_trades == 0:
         total_trades = 1
-    print pnl, total_trades, pnl / total_trades
+    print pnl, total_trades, pnl / abs(total_trades)
     print '-' * 20
-    logger.info('  '.join(map(str, [pnl, total_trades, pnl / total_trades])))
+    logger.info('  '.join(map(str, [pnl, total_trades, pnl / abs(total_trades)])))
     logger.info('-' * 20)
     #print '=' * 20
 
@@ -361,17 +361,18 @@ def main_worker(symbols, timestamp, instance_num):
     epsilon = 0.001
     #gamma = 0.0001
 
-    for gamma in [0.0001]: #[1, 0.1, 0.001, 0.0001]:
-        for interval in [1]: #[1, 2]: #[5, 10, 1]: #[5, 30, 120]:
-            for delay in [1]: #[1, 2]: #[1, 2, 3, 4, 5, 6]:
+    for gamma in [0.0001, 1, 0.1, 0.001]:
+        for delay in [1, 3, 5, 10]:
+            for interval in [1, 2, 5, 10, 30, 60]:
                 for symbol in symbols:
                     try:
                         print symbol, interval
                         logger.info('%s interval=%d' % (symbol, interval))
-                        svm_data = SvmData(symbol, SvmData.ONE_MIN_COMP, interval)
+                        svm_data = SvmData(symbol, SvmData.ONE_MIN, interval)
                         svm_data.set_settings(portion_training=0.5)
                         svm_data.set_dimension_delay(dimension, delay)
                         test_symbol(svm_data, num_partitions_to_keep=num_partitions, fixed_gamma=gamma, fixed_epsilon=epsilon, verbose=1, use_random_partition=0)
+                        svm_data = None
                     except:
                         print symbol, interval, 'failed'
                         logger.info('%s interval=%d failed' % (symbol, interval))
@@ -381,7 +382,7 @@ def main_worker(symbols, timestamp, instance_num):
 def main():
 
     symbols = []
-    flist = glob.glob(r'../data/1min-comp-etf/*_1.dat')
+    flist = glob.glob(r'../data/1min/*_1.txt')
     for file in flist:
         basename = os.path.basename(file)
         symbol = basename[:-6]

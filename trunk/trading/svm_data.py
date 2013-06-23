@@ -30,7 +30,7 @@ class ShortOneMinBar:
             _date * 10000 + _time, _close
 
     def __str__(self):
-        return '%d, %.02f, %f' % (
+        return '%d, %.02f' % (
             self.date, self.close)
 
 # --------------------------------------------------------------------------------
@@ -63,7 +63,7 @@ def yahoo_to_bars(filename):
 # 1min data
 # --------------------------------------------------------------------------------
 
-def onemin_to_bars(filename):
+def onemin_to_bars(filename, first_day=0):
     f = open(filename)
     bars = []
     for line in f:
@@ -72,6 +72,8 @@ def onemin_to_bars(filename):
             _date, _time, _open,  _high,  _low,  _close,  _volume  = line.strip().split('\t')
             arr = _date.split('/')
             _date = int(arr[2]) * 10000 + int(arr[0]) * 100 + int(arr[1])
+            if first_day != 0 and _date >= first_day:
+                break
             _time = int(_time.replace(':', ''))
             _open = float(_open)
             _high = float(_high)
@@ -89,7 +91,7 @@ def onemin_to_bars(filename):
             pass
     return bars
 
-def onemincomp_to_bars(filename):
+def onemincomp_to_bars(filename, first_day=0):
     f = open(filename, 'rb')
     bars = []
 
@@ -112,7 +114,11 @@ def onemincomp_to_bars(filename):
                 h, m = tt2 / 60, tt2 % 60
                 price = p1 + p2 * 0.01
 
-                bar = ShortOneMinBar(y * 10000 + M * 100 + d, h * 100 + m,
+                date = y * 10000 + M * 100 + d
+                if first_day != 0 and date >= first_day:
+                    break
+
+                bar = ShortOneMinBar(date, h * 100 + m,
                     price, price, price, price, 0)
                 #print y, M, d, h, m, '####', bar.close, dd2, tt2, p1, p2, '####%d,%x'% (i, i), buf[i:i+8].encode('hex')
                 bars.append(bar)
@@ -279,7 +285,7 @@ class SvmData:
     OUTPUT_LOG_RETURN = 2
     OUTPUT_LOG_RETURN_EMA = 3
 
-    def __init__(self, symbol, source, interval=1):
+    def __init__(self, symbol, source, interval=1, first_day=0):
         self.source = source
         self.symbol = symbol
         self.set_settings()
@@ -287,14 +293,17 @@ class SvmData:
         if source == SvmData.YAHOO:
             self.bars = yahoo_to_bars(get_yahoo_file(symbol))
         elif source == SvmData.ONE_MIN:
-            self.bars = onemin_to_bars(get_onemin_file(symbol))
+            self.bars = onemin_to_bars(get_onemin_file(symbol), first_day)
         elif source == SvmData.ONE_MIN_COMP:
-            self.bars = onemincomp_to_bars(get_onemincomp_file(symbol))
+            self.bars = onemincomp_to_bars(get_onemincomp_file(symbol), first_day)
         elif source == SvmData.FOREX:
             self.bars = forex_to_bars(get_forex_file(symbol))
 
         if self.interval != 1:
             self.bars = self.convert_bars_to_interval(self.bars, self.interval)
+
+        self.cur_date = 0
+        self.bars_in_cur_date = 0
 
     def convert_bars_to_interval(self, bars, interval):
         new_bars = []
@@ -410,6 +419,45 @@ class SvmData:
                 atr = (19 * pdn + true_ranges[i]) / 20
             atrs.append(atr)
         return true_ranges, atrs
+
+    def bars_to_svm_lines_partial(self, bars, extended=0):
+        bars.sort(lambda a, b: cmp(a.date, b.date))
+        bar_values = [b.close for b in bars]
+        true_ranges, atrs = self.bars_to_true_ranges(bars)
+        svm_lines = []
+        ema15_values = get_ema_arr(bar_values, 15)
+        ema3_values = get_ema_arr(bar_values, 3)
+        for i in range(self.skip_front, len(bar_values)):
+            svm_line = []
+
+            # output
+            output = 0 # fake
+            svm_line.append(output)
+
+            # inputs
+            if self.input_type == SvmData.INPUT_RDP:
+                for j in range(self.time_delay, self.time_delay * self.dimension, self.time_delay):
+                    svm_line.append(rdp(bar_values, i, j))
+
+                ema_15 = rdp2(bar_values[i], ema(ema15_values, i, 15))
+                svm_line.append(ema_15)
+
+            elif self.input_type == SvmData.INPUT_OVER_EMBEDDING:
+                for j in range(0, self.dimension*self.time_delay, self.time_delay):
+                    svm_line.append(bar_values[i-j] - bar_values[i-self.time_delay-j])
+
+            if extended:
+                svm_line += [true_ranges[i], atrs[i]]
+                if self.output_type == SvmData.OUTPUT_RDP_EMA or self.output_type == SvmData.OUTPUT_LOG_RETURN_EMA:
+                    ema3_i5 = 0 # fake
+                    ema3_i = ema(ema3_values, i, 3)
+                    svm_line += [ ema3_i5, ema3_i ]
+
+                svm_line += [0, bar_values[i], bars[i].date]
+
+            svm_lines.append(svm_line)
+
+        return svm_lines
 
     def bars_to_svm_lines(self, bars, extended=0):
         bars.sort(lambda a, b: cmp(a.date, b.date))
@@ -613,6 +661,56 @@ class SvmData:
         cmp_f.close()
 
         get_and_save_perf_metrics(self.symbol, predicted_values, actual_values, svm_train_param='CONVERTED, '+svm_train_param+', '+self.desc)
+
+    def roll_forward_working_date(self, new_date):
+        if new_date <= self.cur_date:
+            return
+        self.cur_date = new_date
+        self.bars_in_cur_date = 0
+
+    def update_with_bat(self, bat):
+        finished_bar = None
+        symbol, ticktype, exchange, price, size, my_time = bat
+        _time = my_time / 3600 * 100 + my_time % 3600 / 60
+        _time = _time / self.interval * self.interval
+        print _time, symbol, price
+        if self.bars_in_cur_date == 0:
+            bar = ShortOneMinBar(self.cur_date, _time, price, price, price, price, size)
+            self.bars.append(bar)
+            self.bars_in_cur_date = 1
+        else:
+            last_bar = self.bars[-1]
+            old_time = last_bar.date % 10000
+            print 'old_time=%d, interval=%d' % (old_time, self.interval)
+            if _time - old_time >= self.interval:
+                bar = ShortOneMinBar(self.cur_date, _time, price, price, price, price, size)
+                self.bars.append(bar)
+                self.bars_in_cur_date += 1
+                finished_bar = last_bar
+            else:
+                last_bar.close = price
+        if finished_bar is None:
+            return None
+        else:
+            print finished_bar
+            return self.update_with_bar()
+
+    def update_with_bar(self):
+        # ignore the last bar with is not finished yet
+        look_back = max(self.skip_front, 15) + 10
+        bars = self.bars[-1-look_back : -1]
+
+        svm_lines = self.bars_to_svm_lines_partial(bars)
+        detailed_svm_lines = self.bars_to_svm_lines_partial(bars, extended=1)
+        num_svm_lines = len(self.svm_lines)
+
+        if self.normalize:
+            for svm_line in svm_lines:
+                for j in range(len(svm_line)):
+                    svm_line[j] = svm_line[j] / self.scaling_map[j]
+        #print len(bars), len(svm_lines), len(detailed_svm_lines)
+
+        return svm_lines[-1], detailed_svm_lines[-1]
 
 def rdp(bar_values, index, period, use_rdp=1):
     return rdp2(bar_values[index], bar_values[index-period], use_rdp)

@@ -1,5 +1,7 @@
 tags
 cscope.out
+trunk/data
+trunk/results
 
 #################
 ## Eclipse

@@ -681,7 +681,7 @@ class SvmData:
         else:
             last_bar = self.bars[-1]
             old_time = last_bar.date % 10000
-            print 'old_time=%d, interval=%d' % (old_time, self.interval)
+            #print 'old_time=%d, interval=%d' % (old_time, self.interval)
             if _time - old_time >= self.interval:
                 bar = ShortOneMinBar(self.cur_date, _time, price, price, price, price, size)
                 self.bars.append(bar)

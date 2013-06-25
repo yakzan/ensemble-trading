@@ -6,6 +6,7 @@ from svm_data import *
 from random import *
 from math import *
 from util import *
+from rv import *
 import sys
 import os
 import time
@@ -14,11 +15,13 @@ import logging
 from multiprocessing import Process, Queue
 import threading
 import socket
+import uuid
 
 logger = 0
 log_dir = ''
 total_instances = 4
 ensemble_predictors = []
+tradebot_client = None
 
 def simple_partition_svm_lines(svm_lines_training, MIN_PARTITION_SIZE):
     MIN_PARTITION_SIZE = int(MIN_PARTITION_SIZE)
@@ -77,11 +80,18 @@ class TradeSetup:
     def __init__(self, symbol, price, size, stoploss, takeprofit, holding_period, setup_time):
         self.symbol, self.price, self.size, self.stoploss, self.takeprofit, self.holding_period, self.setup_time = \
                 symbol, price, size, stoploss, takeprofit, holding_period, setup_time
+        self.uuid = str(uuid.uuid1())
         self.time_to_live = 60 #FIXME
         self.fill_time = 0
         self.status = ''
+        self.send()
+
+    def send(self):
+        global tradebot_client
+        tradebot_client.send_trade_setup(self)
 
     def update_with_bat(self, bat):
+        return '' # FIXME: should update with tibrv msg
         symbol, ticktype, exchange, price, size, my_time = bat
         if symbol != self.symbol or ticktype != 3:
             return ''
@@ -176,6 +186,8 @@ class PositionManager:
         size_per_trade = int(min(self.equity * 0.5 / avg_price, self.equity * 0.05 / atr)) / 10 * 10
         if size_per_trade <= 0:
             size_per_trade = 1
+        if size_per_trade >= 2000:
+            size_per_trade = 2000
 
         cur_size = 0
         stoploss = 0
@@ -195,7 +207,7 @@ class PositionManager:
 
         trade = TradeSetup(self.symbol, cur_price, cur_size, stoploss, takeprofit, self.holding_period, cur_time)
         self.trades.append(trade)
-        logger.debug('%02d:%02d, symbol=%s, cur_price=%.2f, cur_size=%d, stoploss=%.2f, takeprofit=%d, holding_period=%d' % (
+        logger.debug('%02d:%02d, symbol=%s, cur_price=%.2f, cur_size=%d, stoploss=%.2f, takeprofit=%.2f, holding_period=%d' % (
             cur_time / 3600, cur_time % 3600 / 60, self.symbol, cur_price, cur_size, stoploss, takeprofit, self.holding_period))
 
 class EnsemblePredictor:
@@ -388,7 +400,7 @@ class MarketDataReceiver(threading.Thread):
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.sock.bind(('localhost', self.port))
+            self.sock.bind(('', self.port))
 
             print 'Market data receiver has been started on port %d' % self.port
             while True:
@@ -420,7 +432,146 @@ class MarketDataReceiver(threading.Thread):
         except:
             dump_exception()
 
+class TradebotClient:
+    def __init__(self, user_id, password):
+        self.user_id = user_id
+        self.password = password
 
+        self.trades = {}
+
+        tibrv_open()
+        self.trans = TibrvTransport('9922', ';238.10.10.11;', '192.168.137.1:7700')
+        self.trans.set_description('ENSEMBLE TRADING')
+
+        self.login_reply_topic = 'ZENITH.TRADEBOT.LOGIN.TBManual.%s' % (user_id)
+
+        self.login_listener = TibrvListener(
+            self.trans,
+            self.login_reply_topic,
+            self.__get_tibrv_callback())
+
+        self.logged_in = False
+        self.login()
+
+    def login(self):
+        msg = TibrvMessage()
+        msg.set_topic('ZENITH.TRADEBOT.LOGIN.TBManual')
+        msg.set_reply_topic(self.login_reply_topic)
+        msg.add_string('CATEGORY', 'LOGIN')
+        msg.add_string('ACTION', 'LOGIN')
+        msg.add_string('USERID', self.user_id)
+        msg.add_string('PWD', self.password)
+        msg.add_int('SMART OM1 MAJOR VERSION', 1)
+        msg.add_int('SMART OM1 MINOR VERSION', 3)
+        print 'Send tradebot login', msg.as_string()
+        logger.debug('Send tradebot login: %s' % (msg.as_string()))
+        self.trans.send(msg)
+
+    def send_trade_setup(self, qs):
+        #symbol, price, size, stoploss, takeprofit, holding_period, setup_time
+
+        self.trades[qs.uuid] = qs
+
+        msg = TibrvMessage()
+        msg.set_topic(self.om_subject)
+        msg.add_string('CATEGORY', 'QUICKSETUP')
+        msg.add_string('ACTION', 'NEW')
+        msg.add_string('SECTYPE', 'Stock')
+        msg.add_string('SYMBOL', qs.symbol)
+        msg.add_string('EXCHANGE', 'ARCA')
+
+        if qs.size > 0:
+            msg.add_string('DIRECTION', 'Long')
+        else:
+            msg.add_string('DIRECTION', 'Short')
+
+        msg.add_int('ENTRY_SHARE', abs(qs.size))
+
+        if 0: # market order
+            msg.add_int('ENTRY_TYPE', 2) # LIMIT=1, MARKET=2
+        else:
+            msg.add_int('ENTRY_TYPE', 1) # LIMIT=1, MARKET=2
+            msg.add_int('LIMIT_TYPE', 3) # 1: Absolute, 2: Bid+, 3: Last+, 4: Ask+
+            msg.add_float('LIMIT_AMOUNT', 0.0)
+
+        msg.add_string('DELTA_PRICE', '0')
+        if qs.stoploss > 0:
+            msg.add_float('STOPLOSS', qs.stoploss)
+        if qs.takeprofit > 0:
+            msg.add_float('TARGET1', qs.takeprofit)
+            msg.add_int('TARGET1_SHARE', abs(qs.size))
+
+        msg.add_int('AUTOTRAIL', 0)
+
+        if qs.holding_period > 0:
+            msg.add_int('HOLDPERIOD', qs.holding_period)
+            msg.add_string('HOLDPERIODUNIT', 'minute')
+
+        msg.add_string('UUID', qs.uuid)
+
+        print 'Send trade setup', self.om_subject, msg.as_string()
+        logger.debug('Send trade setup: %s %s' % (self.om_subject, msg.as_string()))
+        self.trans.send(msg)
+
+    def __get_tibrv_callback(self):
+        def process_msg_func(transport, msg):
+            self.process_tibrv_msg(msg)
+        self.__tibrv_callback = process_msg_func
+        return self.__tibrv_callback
+
+    def process_tibrv_msg(self, msg):
+        topic = msg.get_topic()
+        print 'received tibrv msg:', topic, msg.as_string()
+        logger.debug('received tibrv msg: %s %s' % (topic, msg.as_string()))
+
+        if topic == self.login_reply_topic:
+
+            type_ = msg.get_string('TYPE', 'LOGINRESPONSE')
+            if type_ != 'LOGINRESPONSE':
+                return
+
+            status = msg.get_int('STATUS', -1)
+            print 'status', status
+            if status != 0:
+                return
+
+            self.logged_in = True
+            self.position_update_subject = msg.get_string('POSITION UPDATE')
+            self.pnl_update_subject = msg.get_string('PNL UPDATE')
+            self.om_subject = msg.get_string('OM LISTENER SUBJECT')
+            self.execution_update_subject = msg.get_string('EXECUTION UPDATE')
+            self.quicksetup_response_suejct = msg.get_string('QUICKSETUPRESPONSE')
+            print self.position_update_subject
+            print self.pnl_update_subject
+            print self.om_subject
+            print self.execution_update_subject
+            print self.quicksetup_response_suejct
+            self.position_update_listener = TibrvListener(self.trans, self.position_update_subject, self.__get_tibrv_callback())
+            self.pnl_update_listener = TibrvListener(self.trans, self.pnl_update_subject, self.__get_tibrv_callback())
+            self.execution_update_listener = TibrvListener(self.trans, self.execution_update_subject, self.__get_tibrv_callback())
+            self.quicksetup_response_listener = TibrvListener(self.trans, self.quicksetup_response_suejct, self.__get_tibrv_callback())
+
+'''
+ {CATEGORY="LOGIN" ACTION="LOGIN" USERID="yzhang" PWD="charles" SMART OM1 MAJOR
+VERSION=1 SMART OM1 MINOR VERSION=3}
+$received tibrv msg {TYPE="LOGINRESPONSE"
+STATUS=0
+DESCRIPTION="Success" OM LIST
+ENER SUBJECT="ZENITH.TRADEBOT.OM.GENERIC.yzhang"
+POSITION UPDATE="ZENITH.TRADEBOT.POSITION.UPDATE.yzhang"
+PNL UPDATE="ZENITH.TRADEBOT.PNL.UPDATE.yzhang"
+ORDERSTATUS UPDATE="ZENITH.TRADEBOT.ORDSTATUS.UPDATE.yzhang"
+EXECUTION UPDATE="ZENITH.TRADEBOT.EXECUTION.UPDATE.yzhang"
+NEW ORDER="ZENITH.TRADEBOT.NEWORDER.yzhang"
+NEW OI="ZENITH.TRADEBOT.NEWOI.yzhang"
+CANCEL ORDER="ZENITH.TRADEBOT.CANCELORDER.yzhang"
+REPLACE ORDER="ZENITH.TRADEBOT.REPLACEORDER.yzhang"
+BULLET="ZENITH.TRADEBOT.BULLET.yzhang"
+ACCOUNTINFOUPDATE="ZENITH.TRADEBOT.ACCOUNTINFO.UPDATE.yzhang"
+QUICKSETUPRESPONSE="ZENITH.TRADEBOT.QUICKSETUP.RESPONSE.yzhang"}
+received tibrv msg {TYPE="ACCOUNTINFO" AccountID="yzhang" AvailableBP=1000000 UsedBP=0 BPLeverage=5 CashBalance=200000 Equity=0}
+received tibrv msg {TYPE="ACCOUNTRISKPARAM" AccountID="yzhang" BPLeverage=5 BPLimitPerOrder=200000 BPLimitPerStock=200000 ImmediateLiquidationLossLimit=-10000 LiquidationModeLossLimit=-10000 LossLimitPerStock=-2000 ShareLimitPerOrder=3000 ShareLimitPerStock=3000}
+'''
 
 def start_market_data_receiver(port):
     r = MarketDataReceiver(port)
@@ -434,10 +585,11 @@ def start_cmdline():
 
 def main():
     global ensemble_predictors
+    global tradebot_client
 
     timestamp = time.strftime('%Y%m%d-%H%M%S', time.localtime())
 
-    first_day = 20130531
+    first_day = 20130610
     configs = [('EWJ', 1, 2)]
     configs_0 = [('EWJ', 1, 2), ('SHY', 1, 2), ('SHV', 1, 2),
                ('CSJ', 1, 2), ('CFT', 1, 2), ('CIU', 1, 2),
@@ -454,6 +606,7 @@ def main():
         #p.start()
         main_worker(timestamp, i)
 
+    tradebot_client = TradebotClient('yzhang', 'charles')
     start_market_data_receiver(19004)
     start_cmdline()
 

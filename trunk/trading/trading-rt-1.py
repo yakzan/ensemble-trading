@@ -22,6 +22,7 @@ log_dir = ''
 total_instances = 4
 ensemble_predictors = []
 tradebot_client = None
+cur_date = 0
 
 def simple_partition_svm_lines(svm_lines_training, MIN_PARTITION_SIZE):
     MIN_PARTITION_SIZE = int(MIN_PARTITION_SIZE)
@@ -77,46 +78,20 @@ def save_settings(argv, timestamp, instance_num):
         logger.info(repr(argv))
 
 class TradeSetup:
-    def __init__(self, symbol, price, size, stoploss, takeprofit, holding_period, setup_time):
+    def __init__(self, position_manager, symbol, price, size, stoploss, takeprofit, holding_period, setup_time):
+        self.position_manager = position_manager
         self.symbol, self.price, self.size, self.stoploss, self.takeprofit, self.holding_period, self.setup_time = \
                 symbol, price, size, stoploss, takeprofit, holding_period, setup_time
         self.uuid = str(uuid.uuid1())
         self.time_to_live = 60 #FIXME
         self.fill_time = 0
         self.status = ''
+        self.pnl = 0
         self.send()
 
     def send(self):
         global tradebot_client
         tradebot_client.send_trade_setup(self)
-
-    def update_with_bat(self, bat):
-        return '' # FIXME: should update with tibrv msg
-        symbol, ticktype, exchange, price, size, my_time = bat
-        if symbol != self.symbol or ticktype != 3:
-            return ''
-
-        if self.status == 'filled':
-            if my_time - self.fill_time >= self.holding_period * 60:
-                self.status = 'time_to_close'
-                return self.status
-
-            elif self.stoploss != 0 and (
-                (self.size > 0 and self.stoploss > price) or
-                (self.size < 0 and self.stoploss < price)):
-                self.status = 'stoploss'
-                return self.status
-
-        elif not self.status and my_time - self.setup_time >= self.time_to_live:
-            self.status = 'cancelled'
-            return self.status
-
-        elif not self.status and self.size > 0 and price <= self.price or self.size < 0 and price >= self.price:
-            self.status = 'filled'
-            self.fill_time = my_time
-            return self.status
-
-        return ''
 
 class PositionManager:
     """ manager positions for an ensemble predictor """
@@ -125,74 +100,36 @@ class PositionManager:
         self.symbol = symbol
         self.holding_period = holding_period # in minute
         self.trades = []
-        self.initial_buying_power = 100000
+        self.initial_buying_power = 10000
         self.balance = self.initial_buying_power
         self.equity = self.initial_buying_power
+        self.open_position_size = 0
         self.positions_size = 0
         self.positions_price = 0
         self.total_pnl = 0
         self.total_trades = 0
         self.total_shares = 0
+        self.price = 0
 
     def update_with_bat(self, bat):
         symbol, ticktype, exchange, price, size, my_time = bat
         if symbol != self.symbol and ticktype != 3:
             return ''
-
-        for trade in self.trades[:]:
-            result = trade.update_with_bat(bat)
-
-            if result == 'filled' or \
-               result == 'time_to_close' or \
-               result == 'stoploss':
-
-                cur_price = price
-                cur_size = trade.size
-                if result != 'filled':
-                    cur_size = 0 - trade.size # close existing position
-                cur_pnl = 0
-
-                if self.positions_size > 0: # was long
-                    if cur_size > 0: # long again
-                        self.positions_price = (self.positions_size * self.positions_price + cur_size * cur_price) / (self.positions_size + cur_size)
-                    elif cur_size < 0: # short
-                        cur_pnl = (cur_price - self.positions_price) * abs(cur_size)
-                elif self.positions_size < 0: # was short
-                    if cur_size < 0: # short again
-                        self.positions_price = abs((self.positions_size * self.positions_price + cur_size * cur_price) / (self.positions_size + cur_size))
-                    elif cur_size > 0: # long
-                        cur_pnl = (self.positions_price - cur_price) * cur_size
-                else:
-                    self.positions_price = cur_price
-
-                self.positions_size += cur_price
-                self.total_trades += 1
-                self.total_shares += abs(cur_price)
-                self.total_pnl += cur_pnl
-                self.balance += cur_pnl
-                self.equity = self.balance + (cur_price - self.positions_price) * (self.positions_size)
-
-                logger.debug('%02d:%02d, symbol=%s, cur_price=%.2f, cur_size=%d, total_pnl=%.2f, total_trades=%d, total_shares=%d' % (
-                    my_time / 3600, my_time % 3600 / 60, self.symbol, cur_price, cur_size, self.total_pnl, self.total_trades, self.total_shares))
-
-                if result != 'filled':
-                    self.trades.remove(trade)
-
-            elif result == 'cancelled':
-                self.trades.remove(trade)
+        self.price = price
 
     def handle_trade_signal(self, atr, avg_price, predicted_value, cur_price, cur_time):
 
-        size_per_trade = int(min(self.equity * 0.5 / avg_price, self.equity * 0.05 / atr)) / 10 * 10
+        size_per_trade = int(min(self.equity * 0.1 / avg_price, self.equity * 0.05 / atr)) / 10 * 10
         if size_per_trade <= 0:
             size_per_trade = 1
-        if size_per_trade >= 2000:
-            size_per_trade = 2000
+        if size_per_trade >= tradebot_client.max_size_per_trade:
+            size_per_trade = tradebot_client.max_size_per_trade
 
         cur_size = 0
         stoploss = 0
         takeprofit = 0
         change = abs(atr) / 3
+        atr = ceil(atr * 100 - 0.01) / 100
         if (predicted_value - cur_price > change): # predicted UP
             cur_size += size_per_trade
             stoploss = cur_price - atr * 2
@@ -202,13 +139,56 @@ class PositionManager:
             stoploss = cur_price + atr * 2
             takeprofit = cur_price - atr * 2
 
-        if cur_size == 0:
+        if cur_size != 0 and abs(self.open_position_size + cur_size) < tradebot_client.max_size_per_trade:
+            self.open_position_size += cur_size
+            logger.debug('%02d:%02d, symbol=%s, cur_price=%.2f, cur_size=%d, stoploss=%.2f, takeprofit=%.2f, holding_period=%d' % (
+                cur_time / 3600, cur_time % 3600 / 60, self.symbol, cur_price, cur_size, stoploss, takeprofit, self.holding_period))
+            trade = TradeSetup(self, self.symbol, cur_price, cur_size, stoploss, takeprofit, self.holding_period, cur_time)
+            self.trades.append(trade)
+        else:
+            cur_size = 0
+
+        diff = predicted_value - cur_price
+        print >>self.f_out, '%4d/%02d/%02d %02d:%02d:00, %d, %.3f, %.3f, %.4f, %.4f, %d, %.3f, %.3f, %.2f, %d' % (
+            cur_date / 10000, cur_date % 10000 / 100, cur_date % 100, cur_time / 3600, cur_time % 3600 / 60,
+            cur_size, cur_price, predicted_value, atr, diff, size_per_trade, stoploss, takeprofit, self.total_pnl, self.open_position_size)
+        self.f_out.flush()
+
+    def handle_position_update(self, qs, update):
+        symbol, shares, price, cur_time = update
+        if symbol != self.symbol:
             return
 
-        trade = TradeSetup(self.symbol, cur_price, cur_size, stoploss, takeprofit, self.holding_period, cur_time)
-        self.trades.append(trade)
-        logger.debug('%02d:%02d, symbol=%s, cur_price=%.2f, cur_size=%d, stoploss=%.2f, takeprofit=%.2f, holding_period=%d' % (
-            cur_time / 3600, cur_time % 3600 / 60, self.symbol, cur_price, cur_size, stoploss, takeprofit, self.holding_period))
+        if not qs.status and shares > 0:
+            qs.status = 'filled'
+            qs.fill_time = cur_time
+            self.total_trades += 1
+            self.total_shares += abs(shares)
+        elif qs.status == 'filled' and shares == 0:
+            qs.status = 'closed'
+            qs.pnl = (self.price - qs.price) * qs.size
+            self.open_position_size -= qs.size
+            self.total_trades += 1
+            self.total_shares += abs(qs.size)
+            self.total_pnl += qs.pnl
+            self.balance += qs.pnl
+            self.equity += qs.pnl # FIXME
+
+            cur_size = -qs.size
+            cur_price = self.price
+            predicted_value = 0
+            atr = 0
+            diff = 0
+            size_per_trade = abs(qs.size)
+            stoploss = 0
+            takeprofit = 0
+            print >>self.f_out, '%4d/%02d/%02d %02d:%02d:00, %d, %.3f, %.3f, %.4f, %.4f, %d, %.3f, %.3f, %.2f, %d' % (
+                cur_date / 10000, cur_date % 10000 / 100, cur_date % 100, cur_time / 3600, cur_time % 3600 / 60,
+                cur_size, cur_price, predicted_value, atr, diff, size_per_trade, stoploss, takeprofit, self.total_pnl, self.open_position_size)
+            self.f_out.flush()
+
+        #FIXME: calculate positions_price, equity
+
 
 class EnsemblePredictor:
     def __init__(self, first_day, symbol, interval=1, delay=1, dimension=5, gamma=0.0001, epsilon=0.001, num_partitions=200):
@@ -219,8 +199,6 @@ class EnsemblePredictor:
         self.svm_data = SvmData(symbol, SvmData.ONE_MIN, interval, first_day)
         self.svm_data.set_settings(portion_training=1)
         self.svm_data.set_dimension_delay(dimension, delay)
-
-        self.cur_date = 0
 
         self.position_manager = PositionManager(self.symbol, self.delay * 2)
 
@@ -250,10 +228,11 @@ class EnsemblePredictor:
         f_out_name = os.path.join(log_dir, '%s_i%d_d%d_g%f_e%f.csv' % (
             symbol, data.interval, data.time_delay, fixed_gamma, fixed_epsilon))
         self.f_out = open(f_out_name, 'w')
+        self.position_manager.f_out = self.f_out
 
         logger.debug('%s: %d lines' % (f_out_name, len(extended_svm_lines)))
 
-        print >>self.f_out, 'date_str, cur_size, cur_price, predicted_value, change, atr, diff, size_per_trade, stoploss'
+        print >>self.f_out, 'date_str, cur_size, cur_price, predicted_value, change, atr, diff, size_per_trade, stoploss, takeprofit, total_pnl'
 
         MIN_PARTITION_SIZE = 30
         if MIN_PARTITION_SIZE > len(svm_lines_training):
@@ -289,7 +268,6 @@ class EnsemblePredictor:
 
         self.num_models = len(self.svm_models)
         self.model_weights = [1.0/self.num_models] * self.num_models
-        self.initial_buying_power = 100000
 
     def update_with_bat(self, bat):
         symbol, ticktype, exchange, price, size, my_time = bat
@@ -300,7 +278,8 @@ class EnsemblePredictor:
         self.position_manager.update_with_bat(bat)
 
         r = self.svm_data.update_with_bat(bat)
-        if r is None:
+        # skip the first few bars. FIXME: how many?
+        if r is None or self.svm_data.bars_in_cur_date <= 5:
             return
         svm_line, extended_svm_line = r
         #print self.symbol, svm_line, extended_svm_line
@@ -364,9 +343,11 @@ class EnsemblePredictor:
         self.position_manager.handle_trade_signal(atr, self.avg_price, predicted_value, cur_price, my_time)
 
     def roll_forward_working_date(self, new_date):
+        global cur_date
         print 'new date', new_date
         logger.info('new date: %d', new_date)
         self.svm_data.roll_forward_working_date(new_date)
+        cur_date = new_date
 
 def main_worker(timestamp, instance_num):
     global logger
@@ -438,6 +419,12 @@ class TradebotClient:
         self.password = password
 
         self.trades = {}
+        self.position_update_subject = ''
+        self.pnl_update_subject = ''
+        self.om_subject = ''
+        self.execution_update_subject = ''
+        self.quicksetup_response_suejct = ''
+        self.max_size_per_trade = 3000
 
         tibrv_open()
         self.trans = TibrvTransport('9922', ';238.10.10.11;', '192.168.137.1:7700')
@@ -491,8 +478,10 @@ class TradebotClient:
             msg.add_int('ENTRY_TYPE', 2) # LIMIT=1, MARKET=2
         else:
             msg.add_int('ENTRY_TYPE', 1) # LIMIT=1, MARKET=2
-            msg.add_int('LIMIT_TYPE', 3) # 1: Absolute, 2: Bid+, 3: Last+, 4: Ask+
-            msg.add_float('LIMIT_AMOUNT', 0.0)
+            #msg.add_int('LIMIT_TYPE', 3) # 1: Absolute, 2: Bid+, 3: Last+, 4: Ask+
+            #msg.add_float('LIMIT_AMOUNT', 0.0)
+            msg.add_int('LIMIT_TYPE', 1) # 1: Absolute, 2: Bid+, 3: Last+, 4: Ask+
+            msg.add_float('LIMIT_AMOUNT', qs.price)
 
         msg.add_string('DELTA_PRICE', '0')
         if qs.stoploss > 0:
@@ -527,51 +516,44 @@ class TradebotClient:
         if topic == self.login_reply_topic:
 
             type_ = msg.get_string('TYPE', 'LOGINRESPONSE')
-            if type_ != 'LOGINRESPONSE':
+            if type_ == 'LOGINRESPONSE':
+                status = msg.get_int('STATUS', -1)
+                print 'status', status
+                if status != 0:
+                    return
+
+                self.logged_in = True
+                self.position_update_subject = msg.get_string('POSITION UPDATE')
+                self.pnl_update_subject = msg.get_string('PNL UPDATE')
+                self.om_subject = msg.get_string('OM LISTENER SUBJECT')
+                self.execution_update_subject = msg.get_string('EXECUTION UPDATE')
+                self.quicksetup_response_suejct = msg.get_string('QUICKSETUPRESPONSE')
+                print self.position_update_subject
+                print self.pnl_update_subject
+                print self.om_subject
+                print self.execution_update_subject
+                print self.quicksetup_response_suejct
+                self.position_update_listener = TibrvListener(self.trans, self.position_update_subject, self.__get_tibrv_callback())
+                #self.pnl_update_listener = TibrvListener(self.trans, self.pnl_update_subject, self.__get_tibrv_callback())
+                self.execution_update_listener = TibrvListener(self.trans, self.execution_update_subject, self.__get_tibrv_callback())
+                self.quicksetup_response_listener = TibrvListener(self.trans, self.quicksetup_response_suejct, self.__get_tibrv_callback())
+
+        elif topic == self.position_update_subject:
+            uuid = msg.get_string('UUID', '')
+            if not self.trades.has_key(uuid):
                 return
 
-            status = msg.get_int('STATUS', -1)
-            print 'status', status
-            if status != 0:
-                return
+            qs = self.trades[uuid]
 
-            self.logged_in = True
-            self.position_update_subject = msg.get_string('POSITION UPDATE')
-            self.pnl_update_subject = msg.get_string('PNL UPDATE')
-            self.om_subject = msg.get_string('OM LISTENER SUBJECT')
-            self.execution_update_subject = msg.get_string('EXECUTION UPDATE')
-            self.quicksetup_response_suejct = msg.get_string('QUICKSETUPRESPONSE')
-            print self.position_update_subject
-            print self.pnl_update_subject
-            print self.om_subject
-            print self.execution_update_subject
-            print self.quicksetup_response_suejct
-            self.position_update_listener = TibrvListener(self.trans, self.position_update_subject, self.__get_tibrv_callback())
-            self.pnl_update_listener = TibrvListener(self.trans, self.pnl_update_subject, self.__get_tibrv_callback())
-            self.execution_update_listener = TibrvListener(self.trans, self.execution_update_subject, self.__get_tibrv_callback())
-            self.quicksetup_response_listener = TibrvListener(self.trans, self.quicksetup_response_suejct, self.__get_tibrv_callback())
+            symbol = msg.get_string('SYMBOL', '')
+            shares = msg.get_int('SHARES', 0)
+            price = msg.get_float('PRICE', 0.0)
+            my_time = msg.get_int('UPDATETIME', 0)
 
-'''
- {CATEGORY="LOGIN" ACTION="LOGIN" USERID="yzhang" PWD="charles" SMART OM1 MAJOR
-VERSION=1 SMART OM1 MINOR VERSION=3}
-$received tibrv msg {TYPE="LOGINRESPONSE"
-STATUS=0
-DESCRIPTION="Success" OM LIST
-ENER SUBJECT="ZENITH.TRADEBOT.OM.GENERIC.yzhang"
-POSITION UPDATE="ZENITH.TRADEBOT.POSITION.UPDATE.yzhang"
-PNL UPDATE="ZENITH.TRADEBOT.PNL.UPDATE.yzhang"
-ORDERSTATUS UPDATE="ZENITH.TRADEBOT.ORDSTATUS.UPDATE.yzhang"
-EXECUTION UPDATE="ZENITH.TRADEBOT.EXECUTION.UPDATE.yzhang"
-NEW ORDER="ZENITH.TRADEBOT.NEWORDER.yzhang"
-NEW OI="ZENITH.TRADEBOT.NEWOI.yzhang"
-CANCEL ORDER="ZENITH.TRADEBOT.CANCELORDER.yzhang"
-REPLACE ORDER="ZENITH.TRADEBOT.REPLACEORDER.yzhang"
-BULLET="ZENITH.TRADEBOT.BULLET.yzhang"
-ACCOUNTINFOUPDATE="ZENITH.TRADEBOT.ACCOUNTINFO.UPDATE.yzhang"
-QUICKSETUPRESPONSE="ZENITH.TRADEBOT.QUICKSETUP.RESPONSE.yzhang"}
-received tibrv msg {TYPE="ACCOUNTINFO" AccountID="yzhang" AvailableBP=1000000 UsedBP=0 BPLeverage=5 CashBalance=200000 Equity=0}
-received tibrv msg {TYPE="ACCOUNTRISKPARAM" AccountID="yzhang" BPLeverage=5 BPLimitPerOrder=200000 BPLimitPerStock=200000 ImmediateLiquidationLossLimit=-10000 LiquidationModeLossLimit=-10000 LossLimitPerStock=-2000 ShareLimitPerOrder=3000 ShareLimitPerStock=3000}
-'''
+            update = symbol, shares, price, my_time
+
+            qs.position_manager.handle_position_update(qs, update)
+
 
 def start_market_data_receiver(port):
     r = MarketDataReceiver(port)

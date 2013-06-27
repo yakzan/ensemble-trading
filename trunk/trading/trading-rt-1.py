@@ -83,9 +83,11 @@ class TradeSetup:
         self.symbol, self.price, self.size, self.stoploss, self.takeprofit, self.holding_period, self.setup_time = \
                 symbol, price, size, stoploss, takeprofit, holding_period, setup_time
         self.uuid = str(uuid.uuid1())
+        self.setup_id = 0
         self.time_to_live = 60 #FIXME
         self.fill_time = 0
         self.status = ''
+        self.is_closing = False
         self.pnl = 0
         self.send()
 
@@ -139,19 +141,61 @@ class PositionManager:
             stoploss = cur_price + atr * 2
             takeprofit = cur_price - atr * 2
 
+        comment = ''
         if cur_size != 0 and abs(self.open_position_size + cur_size) < tradebot_client.max_size_per_trade:
-            self.open_position_size += cur_size
             logger.debug('%02d:%02d, symbol=%s, cur_price=%.2f, cur_size=%d, stoploss=%.2f, takeprofit=%.2f, holding_period=%d' % (
                 cur_time / 3600, cur_time % 3600 / 60, self.symbol, cur_price, cur_size, stoploss, takeprofit, self.holding_period))
-            trade = TradeSetup(self, self.symbol, cur_price, cur_size, stoploss, takeprofit, self.holding_period, cur_time)
-            self.trades.append(trade)
+
+            close_size = 0
+            if self.open_position_size != 0 and self.open_position_size * cur_size < 0:
+                # new trade => close
+                size_to_close = cur_size
+                for qs in self.trades:
+                    if qs.status != 'filled' or qs.is_closing:
+                        continue
+                    if qs.size + size_to_close == 0: # close all
+                        close_size += size_to_close
+                        size_to_close = 0
+                        comment += 'CA_%02d:%02d ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60)
+                        qs.is_closing = True
+                        break
+                    elif (qs.size + size_to_close) * qs.size > 0: # close part
+                        close_size += (-qs.size)
+                        size_to_close = 0
+                        comment += 'CP_%02d:%02d ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60)
+                        qs.is_closing = True
+                        break
+                    elif (qs.size + size_to_close) * qs.size < 0: # close all, only part of the trade
+                        close_size += (-qs.size)
+                        size_to_close -= (-qs.size)
+                        comment += 'CA_%02d:%02d ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60)
+                        qs.is_closing = True
+
+            trade_size = cur_size - close_size
+            if trade_size < 0:
+                trade_size = 0
+            if trade_size > 0:
+                trade = TradeSetup(self, self.symbol, cur_price, trade_size, stoploss, takeprofit, self.holding_period, cur_time)
+                self.trades.append(trade)
+
+            if close_size > 0:
+                # close, FIXME
+                tradebot_client.close_position(qs)
+
+            cur_size = close_size + trade_size
+
         else:
-            cur_size = 0
+            close_size = trade_size = cur_size = 0
 
         diff = predicted_value - cur_price
-        print >>self.f_out, '%4d/%02d/%02d %02d:%02d:00, %d, %.3f, %.3f, %.4f, %.4f, %d, %.3f, %.3f, %.2f, %d' % (
+        pnl_per_share = 0
+        if self.total_shares != 0:
+            pnl_per_share = self.total_pnl / abs(self.total_shares)
+        print >>self.f_out, '%4d/%02d/%02d %02d:%02d:00, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %d, %d, %d, %d, %d, %.4f, %.4f, %s' % (
             cur_date / 10000, cur_date % 10000 / 100, cur_date % 100, cur_time / 3600, cur_time % 3600 / 60,
-            cur_size, cur_price, predicted_value, atr, diff, size_per_trade, stoploss, takeprofit, self.total_pnl, self.open_position_size)
+            cur_price, predicted_value, atr, diff, cur_price, stoploss, takeprofit,
+            size_per_trade, cur_size, trade_size, close_size, self.open_position_size,
+            self.total_pnl, pnl_per_share, comment)
         self.f_out.flush()
 
     def handle_position_update(self, qs, update):
@@ -162,8 +206,32 @@ class PositionManager:
         if not qs.status and shares > 0:
             qs.status = 'filled'
             qs.fill_time = cur_time
+            self.open_position_size += qs.size
             self.total_trades += 1
             self.total_shares += abs(shares)
+
+            cur_price = self.price
+            predicted_value = 0
+            atr = 0
+            diff = 0
+            stoploss = 0
+            takeprofit = 0
+            size_per_trade = 0
+            cur_size = 0
+            trade_size = 0
+            close_size = 0
+            pnl_per_share = 0
+            if self.total_shares != 0:
+                pnl_per_share = self.total_pnl / abs(self.total_shares)
+            comment = 'PF_%02d:%02d ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60)
+
+            print >>self.f_out, '%4d/%02d/%02d %02d:%02d:00, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %d, %d, %d, %d, %d, %.4f, %.4f, %s' % (
+                cur_date / 10000, cur_date % 10000 / 100, cur_date % 100, cur_time / 3600, cur_time % 3600 / 60,
+                cur_price, predicted_value, atr, diff, cur_price, stoploss, takeprofit,
+                size_per_trade, cur_size, trade_size, close_size, self.open_position_size,
+                self.total_pnl, pnl_per_share, comment)
+            self.f_out.flush()
+
         elif qs.status == 'filled' and shares == 0:
             qs.status = 'closed'
             qs.pnl = (self.price - qs.price) * qs.size
@@ -174,17 +242,26 @@ class PositionManager:
             self.balance += qs.pnl
             self.equity += qs.pnl # FIXME
 
-            cur_size = -qs.size
             cur_price = self.price
             predicted_value = 0
             atr = 0
             diff = 0
-            size_per_trade = abs(qs.size)
             stoploss = 0
             takeprofit = 0
-            print >>self.f_out, '%4d/%02d/%02d %02d:%02d:00, %d, %.3f, %.3f, %.4f, %.4f, %d, %.3f, %.3f, %.2f, %d' % (
+            size_per_trade = abs(qs.size)
+            cur_size = -qs.size
+            trade_size = 0
+            close_size = cur_size
+            pnl_per_share = 0
+            if self.total_shares != 0:
+                pnl_per_share = self.total_pnl / abs(self.total_shares)
+            comment = 'PC_%02d:%02d ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60)
+
+            print >>self.f_out, '%4d/%02d/%02d %02d:%02d:00, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %d, %d, %d, %d, %d, %.4f, %.4f, %s' % (
                 cur_date / 10000, cur_date % 10000 / 100, cur_date % 100, cur_time / 3600, cur_time % 3600 / 60,
-                cur_size, cur_price, predicted_value, atr, diff, size_per_trade, stoploss, takeprofit, self.total_pnl, self.open_position_size)
+                cur_price, predicted_value, atr, diff, cur_price, stoploss, takeprofit,
+                size_per_trade, cur_size, trade_size, close_size, self.open_position_size,
+                self.total_pnl, pnl_per_share, comment)
             self.f_out.flush()
 
         #FIXME: calculate positions_price, equity
@@ -232,7 +309,7 @@ class EnsemblePredictor:
 
         logger.debug('%s: %d lines' % (f_out_name, len(extended_svm_lines)))
 
-        print >>self.f_out, 'date_str, cur_size, cur_price, predicted_value, change, atr, diff, size_per_trade, stoploss, takeprofit, total_pnl'
+        print >>self.f_out, 'date_str, cur_price, predicted_value, atr, diff, cur_price, stoploss, takeprofit, size_per_trade, cur_size, trade_size, close_size, open_position_size, total_pnl, pnl_per_share, comment'
 
         MIN_PARTITION_SIZE = 30
         if MIN_PARTITION_SIZE > len(svm_lines_training):
@@ -502,6 +579,19 @@ class TradebotClient:
         logger.debug('Send trade setup: %s %s' % (self.om_subject, msg.as_string()))
         self.trans.send(msg)
 
+    def close_position(self, qs):
+        if qs.setup_id == 0:
+            return
+        msg = TibrvMessage()
+        msg.set_topic(self.om_subject)
+        msg.add_string('CATEGORY', 'POSITION')
+        msg.add_string('ACTION', 'LASTPRICE CLOSE POSITION')
+        msg.add_string('SYMBOL', qs.symbol)
+        msg.add_int('SETUP_ID', qs.setup_id)
+        print 'Send close position msg', self.om_subject, msg.as_string()
+        logger.debug('Send close position msg: %s %s' % (self.om_subject, msg.as_string()))
+        self.trans.send(msg)
+
     def __get_tibrv_callback(self):
         def process_msg_func(transport, msg):
             self.process_tibrv_msg(msg)
@@ -544,6 +634,7 @@ class TradebotClient:
                 return
 
             qs = self.trades[uuid]
+            qs.setup_id = msg.get_int('SETUP_ID', 0)
 
             symbol = msg.get_string('SYMBOL', '')
             shares = msg.get_int('SHARES', 0)
@@ -572,8 +663,8 @@ def main():
     timestamp = time.strftime('%Y%m%d-%H%M%S', time.localtime())
 
     first_day = 20130610
-    configs = [('EWJ', 1, 2)]
-    configs_0 = [('EWJ', 1, 2), ('SHY', 1, 2), ('SHV', 1, 2),
+    #configs = [('EWJ', 1, 2)]
+    configs = [('EWJ', 1, 2), ('SHY', 1, 2), ('SHV', 1, 2),
                ('CSJ', 1, 2), ('CFT', 1, 2), ('CIU', 1, 2),
                ('AGG', 1, 2), ('GVI', 1, 2), ('RWX', 1, 2),
                ('TIP', 1, 2), ('IEI', 1, 2), ('EWL', 1, 2)]

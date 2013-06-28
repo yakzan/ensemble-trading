@@ -119,6 +119,19 @@ class PositionManager:
             return ''
         self.price = price
 
+        # cancel quicksetups that are not filled for a long time
+        if 0: # FIXME: how to cancel setup?
+            for qs in self.trades:
+                if not qs.status and my_time - qs.setup_time >= qs.time_to_live:
+                    qs.status = 'cancelled'
+                    tradebot_client.cancel_setup(qs)
+
+        if 1:
+            for qs in self.trades:
+                if not qs.status and my_time - qs.setup_time >= 60:
+                    tradebot_client.chase_setup(qs)
+
+
     def handle_trade_signal(self, atr, avg_price, predicted_value, cur_price, cur_time):
 
         size_per_trade = int(min(self.equity * 0.2 / avg_price, self.equity * 0.05 / atr)) / 10 * 10
@@ -216,6 +229,10 @@ class PositionManager:
         if not qs.status and shares > 0:
             qs.status = 'filled'
             qs.fill_time = cur_time
+            if price > 0:
+                qs.fill_price = price
+            else:
+                qs.fill_price = qs.price
             self.open_position_size += qs.size
             self.total_trades += 1
             self.total_shares += abs(shares)
@@ -244,7 +261,7 @@ class PositionManager:
 
         elif qs.status == 'filled' and shares == 0:
             qs.status = 'closed'
-            qs.pnl = (self.price - qs.price) * qs.size
+            qs.pnl = (self.price - qs.fill_price) * qs.size
             self.open_position_size -= qs.size
             self.total_trades += 1
             self.total_shares += abs(qs.size)
@@ -561,7 +578,7 @@ class TradebotClient:
 
         msg.add_int('ENTRY_SHARE', abs(qs.size))
 
-        if 0: # market order
+        if 1: # market order
             msg.add_int('ENTRY_TYPE', 2) # LIMIT=1, MARKET=2
         else:
             msg.add_int('ENTRY_TYPE', 1) # LIMIT=1, MARKET=2
@@ -600,6 +617,24 @@ class TradebotClient:
         msg.add_int('SETUP_ID', qs.setup_id)
         print 'Send close position msg', self.om_subject, msg.as_string()
         logger.debug('Send close position msg: %s %s' % (self.om_subject, msg.as_string()))
+        self.trans.send(msg)
+
+    def cancel_setup(self, qs):
+        pass
+
+    def chase_setup(self, qs):
+        if qs.setup_id == 0:
+            return
+        msg = TibrvMessage()
+        msg.set_topic(self.om_subject)
+        msg.add_string('CATEGORY', 'TRADESETUP')
+        msg.add_string('ACTION', 'CHASE TRADESETUP')
+        msg.add_string('SYMBOL', qs.symbol)
+        #msg.add_int('SETUP_ID', qs.setup_id)
+        msg.add_string('SETUP_ID', str(qs.setup_id))
+        msg.add_string('UUID', qs.uuid)
+        print 'Send chase quicksetup msg', self.om_subject, msg.as_string()
+        logger.debug('Send chase quicksetup msg: %s %s' % (self.om_subject, msg.as_string()))
         self.trans.send(msg)
 
     def __get_tibrv_callback(self):
@@ -665,6 +700,8 @@ def start_cmdline():
         line = raw_input('$')
         if line == 'exit':
             break
+        elif line == 'tl':
+            tradebot_client.login()
 
 def main():
     global ensemble_predictors
@@ -672,7 +709,7 @@ def main():
 
     timestamp = time.strftime('%Y%m%d-%H%M%S', time.localtime())
 
-    first_day = 20130611
+    first_day = 20130614
     #configs = [('EWJ', 1, 2)]
     configs = [('EWJ', 1, 2), ('SHY', 1, 2), ('SHV', 1, 2),
                ('CSJ', 1, 2), ('CFT', 1, 2), ('CIU', 1, 2),

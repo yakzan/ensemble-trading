@@ -102,7 +102,7 @@ class PositionManager:
         self.symbol = symbol
         self.holding_period = holding_period # in minute
         self.trades = []
-        self.initial_buying_power = 10000
+        self.initial_buying_power = 100000
         self.balance = self.initial_buying_power
         self.equity = self.initial_buying_power
         self.open_position_size = 0
@@ -121,7 +121,7 @@ class PositionManager:
 
     def handle_trade_signal(self, atr, avg_price, predicted_value, cur_price, cur_time):
 
-        size_per_trade = int(min(self.equity * 0.1 / avg_price, self.equity * 0.05 / atr)) / 10 * 10
+        size_per_trade = int(min(self.equity * 0.2 / avg_price, self.equity * 0.05 / atr)) / 10 * 10
         if size_per_trade <= 0:
             size_per_trade = 1
         if size_per_trade >= tradebot_client.max_size_per_trade:
@@ -142,7 +142,11 @@ class PositionManager:
             takeprofit = cur_price - atr * 2
 
         comment = ''
-        if cur_size != 0 and abs(self.open_position_size + cur_size) < tradebot_client.max_size_per_trade:
+
+        if cur_size != 0 and \
+                abs(self.open_position_size + cur_size) < tradebot_client.max_size_per_trade and \
+                cur_time <= 15*3600 + 30*60:
+
             logger.debug('%02d:%02d, symbol=%s, cur_price=%.2f, cur_size=%d, stoploss=%.2f, takeprofit=%.2f, holding_period=%d' % (
                 cur_time / 3600, cur_time % 3600 / 60, self.symbol, cur_price, cur_size, stoploss, takeprofit, self.holding_period))
 
@@ -153,34 +157,40 @@ class PositionManager:
                 for qs in self.trades:
                     if qs.status != 'filled' or qs.is_closing:
                         continue
-                    if qs.size + size_to_close == 0: # close all
-                        close_size += size_to_close
-                        size_to_close = 0
-                        comment += 'CA_%02d:%02d ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60)
-                        qs.is_closing = True
+
+                    qs.is_closing = True
+                    tradebot_client.close_position(qs)
+                    comment += 'CA_%02d:%02d ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60)
+
+                    close_size += (-qs.size)
+                    size_to_close -= (-qs.size)
+                    if size_to_close <= 0:
                         break
-                    elif (qs.size + size_to_close) * qs.size > 0: # close part
-                        close_size += (-qs.size)
-                        size_to_close = 0
-                        comment += 'CP_%02d:%02d ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60)
-                        qs.is_closing = True
-                        break
-                    elif (qs.size + size_to_close) * qs.size < 0: # close all, only part of the trade
-                        close_size += (-qs.size)
-                        size_to_close -= (-qs.size)
-                        comment += 'CA_%02d:%02d ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60)
-                        qs.is_closing = True
 
             trade_size = cur_size - close_size
             if trade_size < 0:
                 trade_size = 0
             if trade_size > 0:
+                comment += 'NT_%d ' % (trade_size)
                 trade = TradeSetup(self, self.symbol, cur_price, trade_size, stoploss, takeprofit, self.holding_period, cur_time)
                 self.trades.append(trade)
 
-            if close_size > 0:
-                # close, FIXME
+            cur_size = close_size + trade_size
+
+        elif cur_time > 15*3600 + 30*60:
+
+            trade_size = 0
+            close_size = 0
+
+            for qs in self.trades:
+                if qs.status != 'filled' or qs.is_closing:
+                    continue
+
+                qs.is_closing = True
                 tradebot_client.close_position(qs)
+                comment += 'CA_%02d:%02d ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60)
+
+                close_size += (-qs.size)
 
             cur_size = close_size + trade_size
 
@@ -662,7 +672,7 @@ def main():
 
     timestamp = time.strftime('%Y%m%d-%H%M%S', time.localtime())
 
-    first_day = 20130610
+    first_day = 20130611
     #configs = [('EWJ', 1, 2)]
     configs = [('EWJ', 1, 2), ('SHY', 1, 2), ('SHV', 1, 2),
                ('CSJ', 1, 2), ('CFT', 1, 2), ('CIU', 1, 2),

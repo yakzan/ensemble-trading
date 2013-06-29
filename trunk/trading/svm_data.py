@@ -666,6 +666,8 @@ class SvmData:
         if new_date <= self.cur_date:
             return
         self.cur_date = new_date
+        # remove older bars
+        self.bars = self.bars[-1000:]
         self.bars_in_cur_date = 0
 
     def update_with_bat(self, bat):

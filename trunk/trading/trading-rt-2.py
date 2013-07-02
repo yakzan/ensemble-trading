@@ -84,13 +84,14 @@ class TradeSetup:
                 symbol, price, size, stoploss, takeprofit, holding_period, setup_time
         self.uuid = str(uuid.uuid1())
         self.setup_id = 0
-        self.time_to_live = 60 #FIXME
+        self.time_to_live = 120 #FIXME
         self.fill_time = 0
         self.status = ''
         self.is_closing = False
         self.is_chasing = False
         self.pnl = 0
         self.send()
+        self.predicted_value = price
 
     def send(self):
         global tradebot_client
@@ -113,28 +114,75 @@ class PositionManager:
         self.total_trades = 0
         self.total_shares = 0
         self.price = 0
+        self.bid = 0
+        self.ask = 0
 
     def update_with_bat(self, bat):
         symbol, ticktype, exchange, price, size, my_time = bat
-        if symbol != self.symbol and ticktype != 3:
+        if symbol != self.symbol:
             return ''
+        if ticktype == 1:
+            self.bid = price
+            return
+        if ticktype == 2:
+            self.ask = price
+            return
+        if ticktype != 3:
+            return
         self.price = price
 
+        comment = ''
         # cancel quicksetups that are not filled for a long time
-        if 0: # FIXME: how to cancel setup?
+        if 1: # FIXME: how to cancel setup?
             for qs in self.trades:
                 if not qs.status and my_time - qs.setup_time >= qs.time_to_live:
                     qs.status = 'cancelled'
                     tradebot_client.cancel_setup(qs)
 
-        if 0:
+        if 1:
             for qs in self.trades:
                 if not qs.status and my_time - qs.setup_time >= 60 and not qs.is_chasing:
-                    tradebot_client.chase_setup(qs)
+
+                    if qs.size > 0 and self.ask > 0 and qs.predicted_value >= self.ask or \
+                            qs.size < 0 and self.bid > 0 and qs.predicted_value <= self.bid:
+
+                        chase_price = self.ask
+                        if qs.size < 0:
+                            chase_price = self.bid
+
+                        comment += 'CH_%02d:%02d:%02d %.3f ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60, qs.setup_time % 60, chase_price)
+                        qs.is_chasing = True
+                        tradebot_client.chase_setup(qs, chase_price)
+
+        if not comment:
+            return
+
+        cur_price = price
+        predicted_value = 0
+        atr = 0
+        diff = 0
+        stoploss = 0
+        takeprofit = 0
+        size_per_trade = 0
+        cur_size = 0
+        trade_size = 0
+        close_size = 0
+        cur_pnl = 0
+        pnl_per_share = 0
+        if self.total_shares != 0:
+            pnl_per_share = self.total_pnl / abs(self.total_shares)
+        print >>self.f_out, '%4d/%02d/%02d %02d:%02d:%02d, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %d, %d, %d, %d, %d, %.4f, %.4f, %.4f, %s' % (
+            cur_date / 10000, cur_date % 10000 / 100, cur_date % 100, my_time / 3600, my_time % 3600 / 60, my_time % 60,
+            cur_price, predicted_value, atr, diff, cur_price, stoploss, takeprofit,
+            size_per_trade, cur_size, trade_size, close_size, self.open_position_size,
+            self.total_pnl, pnl_per_share, cur_pnl, comment)
+        self.f_out.flush()
 
 
     def handle_trade_signal(self, atr, avg_price, predicted_value, cur_price, cur_time):
 
+        if atr <= 0.00001:
+            atr = 0.00001
         size_per_trade = int(min(self.equity * 0.2 / avg_price, self.equity * 0.05 / atr)) / 10 * 10
         if size_per_trade <= 0:
             size_per_trade = 1
@@ -157,12 +205,21 @@ class PositionManager:
 
         comment = ''
 
+        buy_price = cur_price
+        if self.bid > 0:
+            buy_price = min(self.bid, ceil(predicted_value * 100 - 0.001) / 100)
+
+        sell_price = cur_price
+        if self.ask > 0:
+            sell_price = max(self.ask, ceil(predicted_value * 100 - 0.001) / 100)
+
         if cur_size != 0 and \
                 abs(self.open_position_size + cur_size) < tradebot_client.max_size_per_trade and \
                 cur_time <= 15*3600 + 30*60:
 
-            logger.debug('%02d:%02d, symbol=%s, cur_price=%.2f, cur_size=%d, stoploss=%.2f, takeprofit=%.2f, holding_period=%d' % (
-                cur_time / 3600, cur_time % 3600 / 60, self.symbol, cur_price, cur_size, stoploss, takeprofit, self.holding_period))
+            logger.debug('%02d:%02d:%02d, symbol=%s, cur_price=%.2f, cur_size=%d, stoploss=%.2f, takeprofit=%.2f, holding_period=%d' % (
+                cur_time / 3600, cur_time % 3600 / 60, cur_time % 60,
+                self.symbol, cur_price, cur_size, stoploss, takeprofit, self.holding_period))
 
             close_size = 0
             if self.open_position_size != 0 and self.open_position_size * cur_size < 0:
@@ -173,8 +230,11 @@ class PositionManager:
                         continue
 
                     qs.is_closing = True
-                    tradebot_client.close_position(qs)
-                    comment += 'CA_%02d:%02d ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60)
+                    close_price = sell_price
+                    if qs.size < 0:
+                        close_price = buy_price
+                    comment += 'CA_%02d:%02d:%02d_%.3f_%d (bid %.3f ask %.3f) ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60, qs.setup_time % 60, close_price, -qs.size, self.bid, self.ask)
+                    tradebot_client.close_position(qs, close_price)
 
                     close_size += (-qs.size)
                     size_to_close -= (-qs.size)
@@ -182,11 +242,15 @@ class PositionManager:
                         break
 
             trade_size = cur_size - close_size
-            if trade_size < 0:
+            if cur_size > 0 and trade_size < 0 or cur_size < 0 and trade_size > 0:
                 trade_size = 0
-            if trade_size > 0:
-                comment += 'NT_%02d:%02d_%d ' % (cur_time / 3600, cur_time % 3600 / 60, trade_size)
-                trade = TradeSetup(self, self.symbol, cur_price, trade_size, stoploss, takeprofit, self.holding_period, cur_time)
+            if trade_size != 0:
+                trade_price = buy_price
+                if trade_size < 0:
+                    trade_price = sell_price
+                comment += 'NT_%02d:%02d:%02d_%.3f %d (bid %.3f ask %.3f) ' % (cur_time / 3600, cur_time % 3600 / 60, cur_time % 60, trade_price, trade_size, self.bid, self.ask)
+                trade = TradeSetup(self, self.symbol, trade_price, trade_size, stoploss, takeprofit, self.holding_period, cur_time)
+                trade.predicted_value = predicted_value
                 self.trades.append(trade)
 
             cur_size = close_size + trade_size
@@ -201,8 +265,11 @@ class PositionManager:
                     continue
 
                 qs.is_closing = True
-                tradebot_client.close_position(qs)
-                comment += 'CA_%02d:%02d ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60)
+                close_price = sell_price
+                if qs.size < 0:
+                    close_price = buy_price
+                comment += 'CA_%02d:%02d:%02d_%.3f_%d (bid %.3f ask %.3f) ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60, qs.setup_time % 60, close_price, -qs.size, self.bid, self.ask)
+                tradebot_client.close_position(qs, close_price)
 
                 close_size += (-qs.size)
 
@@ -210,25 +277,26 @@ class PositionManager:
 
         else:
             close_size = trade_size = cur_size = 0
+            return
 
         diff = predicted_value - cur_price
         cur_pnl = 0
         pnl_per_share = 0
         if self.total_shares != 0:
             pnl_per_share = self.total_pnl / abs(self.total_shares)
-        print >>self.f_out, '%4d/%02d/%02d %02d:%02d:00, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %d, %d, %d, %d, %d, %.4f, %.4f, %.4f, %s' % (
-            cur_date / 10000, cur_date % 10000 / 100, cur_date % 100, cur_time / 3600, cur_time % 3600 / 60,
+        print >>self.f_out, '%4d/%02d/%02d %02d:%02d:%02d, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %d, %d, %d, %d, %d, %.4f, %.4f, %.4f, %s' % (
+            cur_date / 10000, cur_date % 10000 / 100, cur_date % 100, cur_time / 3600, cur_time % 3600 / 60, cur_time % 60,
             cur_price, predicted_value, atr, diff, cur_price, stoploss, takeprofit,
             size_per_trade, cur_size, trade_size, close_size, self.open_position_size,
             self.total_pnl, pnl_per_share, cur_pnl, comment)
         self.f_out.flush()
 
     def handle_position_update(self, qs, update):
-        symbol, shares, price, cur_time = update
+        symbol, shares, price, cur_time, reason = update
         if symbol != self.symbol:
             return
 
-        if not qs.status and shares > 0:
+        if not qs.status and shares != 0:
             qs.status = 'filled'
             qs.fill_time = cur_time
             if price > 0:
@@ -253,10 +321,10 @@ class PositionManager:
             pnl_per_share = 0
             if self.total_shares != 0:
                 pnl_per_share = self.total_pnl / abs(self.total_shares)
-            comment = 'PF_%02d:%02d ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60)
+                comment = 'PF_%02d:%02d:%02d_%.3f_%d %s ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60, qs.setup_time % 60, price, shares, reason)
 
-            print >>self.f_out, '%4d/%02d/%02d %02d:%02d:00, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %d, %d, %d, %d, %d, %.4f, %.4f, %.4f, %s' % (
-                cur_date / 10000, cur_date % 10000 / 100, cur_date % 100, cur_time / 3600, cur_time % 3600 / 60,
+            print >>self.f_out, '%4d/%02d/%02d %02d:%02d:%02d, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %d, %d, %d, %d, %d, %.4f, %.4f, %.4f, %s' % (
+                cur_date / 10000, cur_date % 10000 / 100, cur_date % 100, cur_time / 3600, cur_time % 3600 / 60, cur_time % 60,
                 cur_price, predicted_value, atr, diff, cur_price, stoploss, takeprofit,
                 size_per_trade, cur_size, trade_size, close_size, self.open_position_size,
                 self.total_pnl, pnl_per_share, cur_pnl, comment)
@@ -278,18 +346,18 @@ class PositionManager:
             diff = 0
             stoploss = 0
             takeprofit = 0
-            size_per_trade = abs(qs.size)
+            size_per_trade = 0 #abs(qs.size)
             cur_size = -qs.size
             trade_size = 0
-            close_size = cur_size
+            close_size = 0 #cur_size
             pnl_per_share = 0
             if self.total_shares != 0:
                 pnl_per_share = self.total_pnl / abs(self.total_shares)
-            comment = 'PC_%02d:%02d (%.4f -> %.4f) ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60,
-                    qs.fill_price, self.price)
+                comment = 'PC_%02d:%02d:%02d (%.4f -> %.4f) %s ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60, qs.setup_time % 60,
+                    qs.fill_price, self.price, reason)
 
-            print >>self.f_out, '%4d/%02d/%02d %02d:%02d:00, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %d, %d, %d, %d, %d, %.4f, %.4f, %.4f, %s' % (
-                cur_date / 10000, cur_date % 10000 / 100, cur_date % 100, cur_time / 3600, cur_time % 3600 / 60,
+            print >>self.f_out, '%4d/%02d/%02d %02d:%02d:%02d, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %d, %d, %d, %d, %d, %.4f, %.4f, %.4f, %s' % (
+                cur_date / 10000, cur_date % 10000 / 100, cur_date % 100, cur_time / 3600, cur_time % 3600 / 60, cur_time % 60,
                 cur_price, predicted_value, atr, diff, cur_price, stoploss, takeprofit,
                 size_per_trade, cur_size, trade_size, close_size, self.open_position_size,
                 self.total_pnl, pnl_per_share, qs.pnl, comment)
@@ -456,6 +524,11 @@ class EnsemblePredictor:
         logger.info('new date: %d', new_date)
         self.svm_data.roll_forward_working_date(new_date)
         cur_date = new_date
+        self.position_manager.trades = []
+        self.position_manager.open_position_size = 0
+        self.position_manager.price = 0
+        self.position_manager.bid = 0
+        self.position_manager.ask = 0
 
 def main_worker(timestamp, instance_num):
     global logger
@@ -505,10 +578,11 @@ class MarketDataReceiver(threading.Thread):
                         symbol, ticktype, exchange, price, size, my_time = \
                                 struct.unpack('6sccfli', buf[i:i+20])
                         ticktype = ord(ticktype)
-                        if ticktype != 3 or my_time < 9*3600 + 30*60:
+                        if my_time < 9*3600 + 29*60:
                             continue
                         if symbol.find('\0') > 0:
                             symbol = symbol.split('\0')[0]
+                        price = ceil(price * 100 - 0.01) / 100
                         bat = symbol, ticktype, exchange, price, size, my_time
 
                         for ensemble_predictor in ensemble_predictors:
@@ -553,17 +627,19 @@ class FakeTradebotClient:
         self.global_setup_id += 1
         qs.setup_id = self.global_setup_id
 
-    def close_position(self, qs):
+    def close_position(self, qs, close_price):
         if qs.setup_id == 0:
             return
+        qs.close_price = close_price
         self.close_position_requests[qs.uuid] = qs
 
     def cancel_setup(self, qs):
         self.cancel_setup_requests[qs.uuid] = qs
 
-    def chase_setup(self, qs):
+    def chase_setup(self, qs, chase_price):
         if qs.setup_id == 0:
             return
+        qs.chase_price = chase_price
         self.chase_setup_requests[qs.uuid] = qs
 
     def update_with_bat(self, bat):
@@ -578,31 +654,36 @@ class FakeTradebotClient:
                 if self.cancel_setup_requests.has_key(qs.uuid):
                     qs.status = 'cancelled'
                     del self.cancel_setup_requests[qs.uuid]
-                elif self.chase_setup_requests.has_key(qs.uuid):
-                    del self.chase_setup_requests[qs.uuid]
-                    # fill
-                    update = symbol, qs.size, price, my_time
+                    update = symbol, 0, -1, my_time, 'cancelled'
                     qs.position_manager.handle_position_update(qs, update)
+                elif self.chase_setup_requests.has_key(qs.uuid):
+                    if (qs.size > 0 and price <= qs.chase_price) or (qs.size < 0 and price >= qs.chase_price):
+                        del self.chase_setup_requests[qs.uuid]
+                        # fill
+                        update = symbol, qs.size, qs.chase_price, my_time, 'chase_filled'
+                        qs.position_manager.handle_position_update(qs, update)
                 elif (qs.size > 0 and price <= qs.price) or (qs.size < 0 and price >= qs.price):
                     # fill
-                    update = symbol, qs.size, price, my_time
+                    update = symbol, qs.size, qs.price, my_time, 'filled'
                     qs.position_manager.handle_position_update(qs, update)
             elif qs.status == 'filled':
                 if my_time - qs.fill_time >= qs.holding_period * 60:
                     # close
-                    update = symbol, 0, price, my_time
+                    update = symbol, 0, price, my_time, 'closed_on_time_out'
                     qs.position_manager.handle_position_update(qs, update)
                 elif qs.stoploss != 0 and (
                         (qs.size > 0 and qs.stoploss > price) or
                         (qs.size < 0 and qs.stoploss < price)):
                     # close
-                    update = symbol, 0, price, my_time
+                    update = symbol, 0, qs.stoploss, my_time, 'closed_on_stoploss'
                     qs.position_manager.handle_position_update(qs, update)
                 elif self.close_position_requests.has_key(qs.uuid):
-                    del self.close_position_requests[qs.uuid]
-                    # close
-                    update = symbol, 0, price, my_time
-                    qs.position_manager.handle_position_update(qs, update)
+                    close_size = -(qs.size)
+                    if (close_size > 0 and price <= qs.close_price) or (close_size < 0 and price >= qs.close_price):
+                        del self.close_position_requests[qs.uuid]
+                        # close
+                        update = symbol, 0, qs.close_price, my_time, 'closed_on_request'
+                        qs.position_manager.handle_position_update(qs, update)
 
 class TradebotClient:
     def __init__(self, user_id, password):
@@ -693,15 +774,38 @@ class TradebotClient:
         logger.debug('Send trade setup: %s %s' % (self.om_subject, msg.as_string()))
         self.trans.send(msg)
 
-    def close_position(self, qs):
+    def close_position(self, qs, close_price):
+        '''
+CATEGORY="POSITION"
+ ACTION="BIDASK CLOSE POSITION" // OR "LASTPRICE CLOSE POSITION"|"CLOSE POSITION", "MIDPOINT CLOSE POSITION", OR "LIMIT CLOSE POSITION"
+ SYMBOL="IBM"
+ SETUP_ID=12345
+
+OR
+
+CATEGORY="POSITION"
+ ACTION="CLOSE POSITION"
+ LIMIT=23.45 //FLOAT VALUE, required if ACTION="LIMIT CLOSE POSITION"
+ DESTINATION="BATS" //STRING, the DESTINATION to send the closing order. If empty string, TB will use same exchange used for entry
+ SYMBOL="IBM"
+ SETUP_ID=12345
+ METHOD="ADDLIQ"/"TAKELIQ"/"LASTPRICE"/"MARKET"/"MIDPOINT"/"LIMITPRICE"
+ LIMIT=123.45 (if METHOD="LIMITPRICE")
+        '''
         if qs.setup_id == 0:
             return
         msg = TibrvMessage()
         msg.set_topic(self.om_subject)
         msg.add_string('CATEGORY', 'POSITION')
-        msg.add_string('ACTION', 'LASTPRICE CLOSE POSITION')
         msg.add_string('SYMBOL', qs.symbol)
         msg.add_int('SETUP_ID', qs.setup_id)
+        msg.add_string('DESTINATION', '')
+        if 0:
+            msg.add_string('ACTION', 'LASTPRICE CLOSE POSITION')
+        else:
+            msg.add_string('ACTION', 'LIMIT CLOSE POSITION')
+            msg.add_float('LIMIT', close_price)
+
         print 'Send close position msg', self.om_subject, msg.as_string()
         logger.debug('Send close position msg: %s %s' % (self.om_subject, msg.as_string()))
         self.trans.send(msg)
@@ -709,9 +813,10 @@ class TradebotClient:
     def cancel_setup(self, qs):
         pass
 
-    def chase_setup(self, qs):
+    def chase_setup(self, qs, chase_price):
         if qs.setup_id == 0:
             return
+        qs.chase_price = chase_price
         msg = TibrvMessage()
         msg.set_topic(self.om_subject)
         msg.add_string('CATEGORY', 'TRADESETUP')
@@ -773,7 +878,7 @@ class TradebotClient:
             price = msg.get_float('PRICE', 0.0)
             my_time = msg.get_int('UPDATETIME', 0)
 
-            update = symbol, shares, price, my_time
+            update = symbol, shares, price, my_time, 'FIXME'
 
             qs.position_manager.handle_position_update(qs, update)
 

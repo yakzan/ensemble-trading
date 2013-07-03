@@ -672,10 +672,16 @@ class FakeTradebotClient:
                     update = symbol, 0, price, my_time, 'closed_on_time_out'
                     qs.position_manager.handle_position_update(qs, update)
                 elif qs.stoploss != 0 and (
-                        (qs.size > 0 and qs.stoploss > price) or
-                        (qs.size < 0 and qs.stoploss < price)):
+                        (qs.size > 0 and qs.stoploss >= price) or
+                        (qs.size < 0 and qs.stoploss <= price)):
                     # close
                     update = symbol, 0, qs.stoploss, my_time, 'closed_on_stoploss'
+                    qs.position_manager.handle_position_update(qs, update)
+                elif qs.takeprofit != 0 and (
+                        (qs.size > 0 and qs.takeprofit <= price) or
+                        (qs.size < 0 and qs.takeprofit >= price)):
+                    # close
+                    update = symbol, 0, qs.takeprofit, my_time, 'closed_on_takeprofit'
                     qs.position_manager.handle_position_update(qs, update)
                 elif self.close_position_requests.has_key(qs.uuid):
                     close_size = -(qs.size)

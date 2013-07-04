@@ -192,9 +192,10 @@ class PositionManager:
 
 
     def handle_trade_signal(self, atr, avg_price, predicted_value, cur_price, cur_time):
-
         if atr <= 0.00001:
             atr = 0.00001
+        if atr < 0.01:
+            return
         size_per_trade = int(min(self.equity * 0.2 / avg_price, self.equity * 0.05 / atr)) / 10 * 10
         if size_per_trade <= 0:
             size_per_trade = 1
@@ -247,6 +248,11 @@ class PositionManager:
                     comment += 'CA_%02d:%02d:%02d_%.3f_%d (bid %.3f ask %.3f) ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60, qs.setup_time % 60, close_price, -qs.size, self.bid, self.ask)
                     tradebot_client.close_position(qs, close_price)
 
+                    print >>self.f_order, '%4d/%02d/%02d %02d:%02d:%02d, %s, %.4f, %d' % (
+                            cur_date / 10000, cur_date % 10000 / 100, cur_date % 100,
+                            cur_time / 3600, cur_time % 3600 / 60, cur_time % 60,
+                            self.symbol, close_price, -qs.size)
+
                     close_size += (-qs.size)
                     size_to_close -= (-qs.size)
                     if cur_size > 0 and size_to_close <= 0 or cur_size < 0 and size_to_close >= 0:
@@ -263,6 +269,11 @@ class PositionManager:
                 trade = TradeSetup(self, self.symbol, trade_price, trade_size, stoploss, takeprofit, self.holding_period, cur_time)
                 trade.predicted_value = predicted_value
                 self.trades.append(trade)
+
+                print >>self.f_order, '%4d/%02d/%02d %02d:%02d:%02d, %s, %.4f, %d' % (
+                        cur_date / 10000, cur_date % 10000 / 100, cur_date % 100,
+                        cur_time / 3600, cur_time % 3600 / 60, cur_time % 60,
+                        self.symbol, trade_price, trade_size)
 
             cur_size = close_size + trade_size
 
@@ -337,7 +348,13 @@ class PositionManager:
             pnl_per_share = 0
             if self.total_shares != 0:
                 pnl_per_share = self.total_pnl / abs(self.total_shares)
-                comment = 'PF_%02d:%02d:%02d_%.3f_%d %s ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60, qs.setup_time % 60, price, shares, reason)
+
+            comment = 'PF_%02d:%02d:%02d_%.3f_%d %s ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60, qs.setup_time % 60, price, shares, reason)
+
+            print >>self.f_trade, '%4d/%02d/%02d %02d:%02d:%02d, %s, %.4f, %d, %d' % (
+                    cur_date / 10000, cur_date % 10000 / 100, cur_date % 100,
+                    cur_time / 3600, cur_time % 3600 / 60, cur_time % 60,
+                    self.symbol, price, shares, self.open_position_size)
 
             print >>self.f_out, '%4d/%02d/%02d %02d:%02d:%02d, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %d, %d, %d, %d, %d, %.4f, %.4f, %.4f, %s' % (
                 cur_date / 10000, cur_date % 10000 / 100, cur_date % 100, cur_time / 3600, cur_time % 3600 / 60, cur_time % 60,
@@ -374,8 +391,13 @@ class PositionManager:
             pnl_per_share = 0
             if self.total_shares != 0:
                 pnl_per_share = self.total_pnl / abs(self.total_shares)
-                comment = 'PC_%02d:%02d:%02d (%.4f -> %.4f) %s ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60, qs.setup_time % 60,
-                    qs.fill_price, self.price, reason)
+            comment = 'PC_%02d:%02d:%02d (%.4f -> %.4f) %s ' % (qs.setup_time / 3600, qs.setup_time % 3600 / 60, qs.setup_time % 60,
+                qs.fill_price, self.price, reason)
+
+            print >>self.f_trade, '%4d/%02d/%02d %02d:%02d:%02d, %s, %.4f, %d, %d' % (
+                    cur_date / 10000, cur_date % 10000 / 100, cur_date % 100,
+                    cur_time / 3600, cur_time % 3600 / 60, cur_time % 60,
+                    self.symbol, price, -qs.size, self.open_position_size)
 
             print >>self.f_out, '%4d/%02d/%02d %02d:%02d:%02d, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %d, %d, %d, %d, %d, %.4f, %.4f, %.4f, %s' % (
                 cur_date / 10000, cur_date % 10000 / 100, cur_date % 100, cur_time / 3600, cur_time % 3600 / 60, cur_time % 60,
@@ -427,6 +449,7 @@ class EnsemblePredictor:
         changes = [abs(line[-3] - line[-2]) / line[-2] for line in extended_svm_lines]
         self.max_changes = max(changes)
 
+
         f_out_name = os.path.join(log_dir, '%s_i%d_d%d_g%f_e%f.csv' % (
             symbol, data.interval, data.time_delay, fixed_gamma, fixed_epsilon))
         self.f_out = open(f_out_name, 'w')
@@ -435,6 +458,18 @@ class EnsemblePredictor:
         logger.debug('%s: %d lines' % (f_out_name, len(extended_svm_lines)))
 
         print >>self.f_out, 'date_str, cur_price, predicted_value, atr, diff, cur_price, stoploss, takeprofit, size_per_trade, cur_size, trade_size, close_size, open_position_size, total_pnl, pnl_per_share, cur_pnl, comment'
+
+        f_order_name = os.path.join(log_dir, '%s_i%d_d%d_g%f_e%f_orders.csv' % (
+            symbol, data.interval, data.time_delay, fixed_gamma, fixed_epsilon))
+        self.f_order = open(f_order_name, 'w')
+        self.position_manager.f_order = self.f_order
+        print >>self.f_order, 'time, symbol, price, qty, curr pty'
+
+        f_trade_name = os.path.join(log_dir, '%s_i%d_d%d_g%f_e%f_trades.csv' % (
+            symbol, data.interval, data.time_delay, fixed_gamma, fixed_epsilon))
+        self.f_trade = open(f_trade_name, 'w')
+        self.position_manager.f_trade = self.f_trade
+        print >>self.f_trade, 'time, symbol, price, qty'
 
         MIN_PARTITION_SIZE = 30
         if MIN_PARTITION_SIZE > len(svm_lines_training):

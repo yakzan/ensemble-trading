@@ -194,8 +194,6 @@ class PositionManager:
     def handle_trade_signal(self, atr, avg_price, predicted_value, cur_price, cur_time):
         if atr <= 0.00001:
             atr = 0.00001
-        if atr < 0.01:
-            return
         size_per_trade = int(min(self.equity * 0.2 / avg_price, self.equity * 0.05 / atr)) / 10 * 10
         if size_per_trade <= 0:
             size_per_trade = 1
@@ -449,6 +447,34 @@ class EnsemblePredictor:
         changes = [abs(line[-3] - line[-2]) / line[-2] for line in extended_svm_lines]
         self.max_changes = max(changes)
 
+        arr_atr = [abs(line[-6]) for line in extended_svm_lines]
+        self.avg_atr = sum(arr_atr) / len(arr_atr)
+        self.stddev_atr = math.sqrt(sum([(b - self.avg_atr) ** 2 for b in arr_atr]) / len(arr_atr))
+
+        upper_atr = self.avg_atr + 1.0 * self.stddev_atr
+        lower_atr = self.avg_atr - 1.0 * self.stddev_atr
+        logger.info('%s: avg_atr=%.4f, lower_atr=%.4f, upper_atr=%.4f (1.0 stddev)' % (self.symbol, self.avg_atr, lower_atr, upper_atr))
+        upper_atr = self.avg_atr + 1.5 * self.stddev_atr
+        lower_atr = self.avg_atr - 1.5 * self.stddev_atr
+        logger.info('%s: avg_atr=%.4f, lower_atr=%.4f, upper_atr=%.4f (1.5 stddev)' % (self.symbol, self.avg_atr, lower_atr, upper_atr))
+        upper_atr = self.avg_atr + 2.0 * self.stddev_atr
+        lower_atr = self.avg_atr - 2.0 * self.stddev_atr
+        logger.info('%s: avg_atr=%.4f, lower_atr=%.4f, upper_atr=%.4f (2.0 stddev)' % (self.symbol, self.avg_atr, lower_atr, upper_atr))
+
+        if self.avg_atr <= 0.005:
+            self.lower_atr = max(0.003, self.avg_atr)
+        elif self.avg_atr <= 0.009:
+            self.lower_atr = 0.009
+        else:
+            self.lower_atr = 0.015
+
+        if self.stddev_atr > 0.004 and self.stddev_atr < 0.01:
+            self.upper_atr = 0.1
+        else:
+            self.upper_atr = 0.06
+
+        logger.info('%s: avg_atr=%.4f, lower_atr=%.4f, upper_atr=%.4f (stddev_atr=%.4f)' % (self.symbol, self.avg_atr, self.lower_atr, self.upper_atr, self.stddev_atr))
+        print '%s: avg_atr=%.4f, lower_atr=%.4f, upper_atr=%.4f (stddev_atr=%.4f)' % (self.symbol, self.avg_atr, self.lower_atr, self.upper_atr, self.stddev_atr)
 
         f_out_name = os.path.join(log_dir, '%s_i%d_d%d_g%f_e%f.csv' % (
             symbol, data.interval, data.time_delay, fixed_gamma, fixed_epsilon))
@@ -577,7 +603,9 @@ class EnsemblePredictor:
 
         # trading
         atr = abs(extended_svm_line[-6])
-        self.position_manager.handle_trade_signal(atr, self.avg_price, predicted_value, cur_price, my_time)
+        #if atr < 0.015 or atr > 0.070: return
+        if atr >= self.lower_atr and atr <= self.upper_atr:
+            self.position_manager.handle_trade_signal(atr, self.avg_price, predicted_value, cur_price, my_time)
 
     def roll_forward_working_date(self, new_date):
         global cur_date
@@ -979,11 +1007,11 @@ def main():
     timestamp = time.strftime('%Y%m%d-%H%M%S', time.localtime())
 
     first_day = 20130603
-    #configs = [('EWJ', 1, 2)]
+    configs_0 = [('IEI', 1, 1), ('CFT', 1, 1)]
     configs = [('EWJ', 1, 1), ('SHY', 1, 1), ('SHV', 1, 1),
                ('CSJ', 1, 1), ('CFT', 1, 1), ('CIU', 1, 1),
                ('AGG', 1, 1), ('GVI', 1, 1), ('RWX', 1, 1),
-               ('TIP', 1, 1), ('IEI', 1, 1), ('EWL', 1, 1)]
+               ('IEI', 1, 1), ('IFN', 1, 1), ('GLD', 1, 1)]
     for symbol, interval, delay in configs:
         ensemble_predictor = EnsemblePredictor(first_day, symbol, interval, delay)
         ensemble_predictors.append(ensemble_predictor)

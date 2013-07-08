@@ -16,6 +16,7 @@ from multiprocessing import Process, Queue
 import threading
 import socket
 import uuid
+from batreader import *
 
 logger = 0
 log_dir = ''
@@ -192,13 +193,14 @@ class PositionManager:
 
 
     def handle_trade_signal(self, atr, avg_price, predicted_value, cur_price, cur_time):
+        #print 'trade signal:', atr, avg_price, predicted_value, cur_price, cur_time
         if atr <= 0.00001:
             atr = 0.00001
-        size_per_trade = int(min(self.equity * 0.2 / avg_price, self.equity * 0.05 / atr)) / 10 * 10
+        size_per_trade = int(min(self.equity * 0.5 / avg_price, self.equity * 0.05 / atr)) / 10 * 10
         if size_per_trade <= 0:
             size_per_trade = 1
-        if size_per_trade >= tradebot_client.max_size_per_trade:
-            size_per_trade = tradebot_client.max_size_per_trade
+        if size_per_trade >= tradebot_client.max_size_per_trade / 2:
+            size_per_trade = tradebot_client.max_size_per_trade / 2
 
         buy_price = cur_price
         if self.bid > 0 and self.bid < self.ask:
@@ -224,7 +226,7 @@ class PositionManager:
         comment = ''
 
         if cur_size != 0 and \
-                abs(self.open_position_size + cur_size) < tradebot_client.max_size_per_trade and \
+                abs(self.open_position_size + cur_size) <= tradebot_client.max_size_per_trade and \
                 cur_time <= 15*3600 + 30*60:
 
             logger.debug('%02d:%02d:%02d, symbol=%s, cur_price=%.2f, cur_size=%d, stoploss=%.2f, takeprofit=%.2f, holding_period=%d' % (
@@ -422,7 +424,7 @@ class EnsemblePredictor:
         self.svm_data.set_settings(portion_training=1)
         self.svm_data.set_dimension_delay(dimension, delay)
 
-        self.position_manager = PositionManager(self.symbol, self.delay * 3)
+        self.position_manager = PositionManager(self.symbol, self.delay * 2)
 
     def train(self):
         fixed_gamma = self.gamma
@@ -451,27 +453,18 @@ class EnsemblePredictor:
         self.avg_atr = sum(arr_atr) / len(arr_atr)
         self.stddev_atr = math.sqrt(sum([(b - self.avg_atr) ** 2 for b in arr_atr]) / len(arr_atr))
 
-        upper_atr = self.avg_atr + 1.0 * self.stddev_atr
-        lower_atr = self.avg_atr - 1.0 * self.stddev_atr
-        logger.info('%s: avg_atr=%.4f, lower_atr=%.4f, upper_atr=%.4f (1.0 stddev)' % (self.symbol, self.avg_atr, lower_atr, upper_atr))
-        upper_atr = self.avg_atr + 1.5 * self.stddev_atr
-        lower_atr = self.avg_atr - 1.5 * self.stddev_atr
-        logger.info('%s: avg_atr=%.4f, lower_atr=%.4f, upper_atr=%.4f (1.5 stddev)' % (self.symbol, self.avg_atr, lower_atr, upper_atr))
-        upper_atr = self.avg_atr + 2.0 * self.stddev_atr
-        lower_atr = self.avg_atr - 2.0 * self.stddev_atr
-        logger.info('%s: avg_atr=%.4f, lower_atr=%.4f, upper_atr=%.4f (2.0 stddev)' % (self.symbol, self.avg_atr, lower_atr, upper_atr))
+        if 1:
+            if self.avg_atr <= 0.005:
+                self.lower_atr = min(0.002, self.avg_atr)
+            elif self.avg_atr <= 0.010:
+                self.lower_atr = 0.009
+            else:
+                self.lower_atr = 0.015
 
-        if self.avg_atr <= 0.005:
-            self.lower_atr = max(0.003, self.avg_atr)
-        elif self.avg_atr <= 0.009:
-            self.lower_atr = 0.009
-        else:
-            self.lower_atr = 0.015
-
-        if self.stddev_atr > 0.004 and self.stddev_atr < 0.01:
-            self.upper_atr = 0.1
-        else:
-            self.upper_atr = 0.06
+            if self.stddev_atr > 0.004 and self.stddev_atr < 0.01:
+                self.upper_atr = 0.100
+            else:
+                self.upper_atr = 0.080
 
         logger.info('%s: avg_atr=%.4f, lower_atr=%.4f, upper_atr=%.4f (stddev_atr=%.4f)' % (self.symbol, self.avg_atr, self.lower_atr, self.upper_atr, self.stddev_atr))
         print '%s: avg_atr=%.4f, lower_atr=%.4f, upper_atr=%.4f (stddev_atr=%.4f)' % (self.symbol, self.avg_atr, self.lower_atr, self.upper_atr, self.stddev_atr)
@@ -604,7 +597,7 @@ class EnsemblePredictor:
         # trading
         atr = abs(extended_svm_line[-6])
         #if atr < 0.015 or atr > 0.070: return
-        if atr >= self.lower_atr and atr <= self.upper_atr:
+        if 1 or atr >= self.lower_atr and atr <= self.upper_atr:
             self.position_manager.handle_trade_signal(atr, self.avg_price, predicted_value, cur_price, my_time)
 
     def roll_forward_working_date(self, new_date):
@@ -644,6 +637,68 @@ class MarketDataReceiver(threading.Thread):
         threading.Thread.__init__(self)
 
     def run(self):
+        self.fake_run()
+
+    def fake_run(self):
+        first_date = 20130603
+        last_date  = 20130731
+        orig_files = glob.glob(r'//192.168.137.11/bat2/*bat.dat')
+        orig_files.sort()
+        for f in orig_files:
+            working_date = int(os.path.basename(f)[:8])
+            print working_date, f
+            if working_date >= first_date and working_date <= last_date:
+                self.play_batfile(f, working_date)
+                time.sleep(5)
+
+    def play_batfile(self, batfile, working_date):
+
+        self.flag_pause = 0
+        self.flag_stop = 0
+
+        self.reader = BATReader(batfile)
+        if 0 != self.reader.init():
+            print 'Failed to open BAT file.'
+            return
+
+        for ensemble_predictor in ensemble_predictors:
+            ensemble_predictor.roll_forward_working_date(working_date)
+        tradebot_client.roll_forward_working_date(working_date)
+
+        while not self.flag_stop:
+            if self.flag_pause:
+                time.sleep(0.1)
+                continue
+
+            (data_len, buf) = self.reader.read_data()
+            if data_len <= 8:
+                break
+
+            head = buf[:8].split('\0')[0]
+            if head == 'BAT':
+                for i in range(8, data_len, 20): # 20: length of a BAT structure
+                    if i+20 > data_len:
+                        continue
+                    (symbol, ticktype, exchange, price, size, my_time) = \
+                        unpack("6sccfli", buf[i:i+20])
+                    ticktype = ord(ticktype)
+                    if my_time < 9*3600 + 29*60:
+                        continue
+                    if symbol.find('\0') > 0:
+                        symbol = symbol.split('\0')[0]
+                    price = ceil(price * 100 - 0.01) / 100
+                    bat = symbol, ticktype, exchange, price, size, my_time
+
+                    for ensemble_predictor in ensemble_predictors:
+                        ensemble_predictor.update_with_bat(bat)
+                    if tradebot_client is not None:
+                        tradebot_client.update_with_bat(bat)
+
+        print 'Finished reading BAT file.'
+
+        self.reader.term()
+
+    def true_run(self):
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -1007,11 +1062,13 @@ def main():
     timestamp = time.strftime('%Y%m%d-%H%M%S', time.localtime())
 
     first_day = 20130603
-    configs_0 = [('IEI', 1, 1), ('CFT', 1, 1)]
-    configs = [('EWJ', 1, 1), ('SHY', 1, 1), ('SHV', 1, 1),
+    configs_1 = [('EWJ', 1, 1), ('SHY', 1, 1), ('SHV', 1, 1),
                ('CSJ', 1, 1), ('CFT', 1, 1), ('CIU', 1, 1),
                ('AGG', 1, 1), ('GVI', 1, 1), ('RWX', 1, 1),
                ('IEI', 1, 1), ('IFN', 1, 1), ('GLD', 1, 1)]
+    configs_2 = [('IEI', 1, 1), ('CFT', 1, 1)]
+    configs_3 = [('EWJ', 1, 1)]
+    configs = configs_3
     for symbol, interval, delay in configs:
         ensemble_predictor = EnsemblePredictor(first_day, symbol, interval, delay)
         ensemble_predictors.append(ensemble_predictor)

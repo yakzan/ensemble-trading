@@ -19,6 +19,7 @@ def analyze_result(symbol, filename, interval, desc='DESC', out_f=sys.stdout):
     equity = 1000000
     last_predicted_value = 0
 
+    data_count = 0
     f = open(filename)
     for line in f:
         line = line.strip()
@@ -39,6 +40,7 @@ def analyze_result(symbol, filename, interval, desc='DESC', out_f=sys.stdout):
         cur_total_pnl = float(cur_total_pnl)
         predicted_value = float(predicted_value)
         cur_pnl = float(cur_pnl)
+        open_position_size = int(open_position_size)
 
         if predicted_value == 0:
             predicted_value = last_predicted_value
@@ -64,7 +66,8 @@ def analyze_result(symbol, filename, interval, desc='DESC', out_f=sys.stdout):
             continue
         if not f3:
             f3 = open_for_write(plot_input, 'w')
-        print >> f3, dt2, cur_price, total_pnl, predicted_value
+        print >> f3, dt2, cur_price, total_pnl, predicted_value#, open_position_size
+        data_count += 1
 
         if max_equity == -1:
             max_equity = equity
@@ -105,9 +108,11 @@ def analyze_result(symbol, filename, interval, desc='DESC', out_f=sys.stdout):
         first_dt, last_dt, symbol, total_pnl, trades, total_pnl / trades, shares, total_pnl / shares, max_drawdown * 100, interval) #set y2range [100000:300000];
     plot_output = plot_input.replace('txt', 'jpg')
     # dt2, cur_price, equity, predicted_value, pnl+100000
-    img_w, img_h = 1800, 800
+    img_w, img_h = min(3600, max(1800, data_count * 2)), 800
     cmd = '''gnuplot -e "set terminal png size %d,%d; set output '%s'; set y2tics; set tics out; set tics nomirror; unset xtics; plot '%s' using 2 with l lc 5 title 'price', '' using 4 with l lc 4 title 'predicted', '' using 3 with l lc -1 title 'pnl' axes x1y2, 0 axes x1y2 title '%s' " ''' % (img_w, img_h, plot_output, plot_input, result_line2)
     #print cmd
+    os.system(cmd)
+    cmd = '''del %s''' % (plot_input)
     os.system(cmd)
 
 def main():

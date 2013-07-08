@@ -675,7 +675,7 @@ class SvmData:
         symbol, ticktype, exchange, price, size, my_time = bat
         _time = my_time / 3600 * 100 + my_time % 3600 / 60
         _time = _time / self.interval * self.interval
-        print _time, symbol, price
+        #print _time, symbol, price
         if self.bars_in_cur_date == 0:
             bar = ShortOneMinBar(self.cur_date, _time, price, price, price, price, size)
             self.bars.append(bar)

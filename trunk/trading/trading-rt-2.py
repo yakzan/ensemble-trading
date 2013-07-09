@@ -213,7 +213,7 @@ class PositionManager:
         cur_size = 0
         stoploss = 0
         takeprofit = 0
-        change = abs(atr) / 3
+        change = abs(atr) / 2.5
         if (predicted_value - cur_price > change): # predicted UP
             cur_size += size_per_trade
             stoploss   = ceil ((buy_price - atr * 2) * 100 - 0.01) / 100
@@ -597,7 +597,7 @@ class EnsemblePredictor:
         # trading
         atr = abs(extended_svm_line[-6])
         #if atr < 0.015 or atr > 0.070: return
-        if 1 or atr >= self.lower_atr and atr <= self.upper_atr:
+        if atr >= self.lower_atr and atr <= self.upper_atr:
             self.position_manager.handle_trade_signal(atr, self.avg_price, predicted_value, cur_price, my_time)
 
     def roll_forward_working_date(self, new_date):
@@ -1061,14 +1061,14 @@ def main():
 
     timestamp = time.strftime('%Y%m%d-%H%M%S', time.localtime())
 
-    first_day = 20130603
+    first_day = 20130501
     configs_1 = [('EWJ', 1, 1), ('SHY', 1, 1), ('SHV', 1, 1),
                ('CSJ', 1, 1), ('CFT', 1, 1), ('CIU', 1, 1),
                ('AGG', 1, 1), ('GVI', 1, 1), ('RWX', 1, 1),
                ('IEI', 1, 1), ('IFN', 1, 1), ('GLD', 1, 1)]
     configs_2 = [('IEI', 1, 1), ('CFT', 1, 1)]
     configs_3 = [('EWJ', 1, 1)]
-    configs = configs_3
+    configs = configs_1
     for symbol, interval, delay in configs:
         ensemble_predictor = EnsemblePredictor(first_day, symbol, interval, delay)
         ensemble_predictors.append(ensemble_predictor)

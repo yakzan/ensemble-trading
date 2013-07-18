@@ -26,10 +26,10 @@ def analyze_result(symbol, filename, interval, desc='DESC', out_f=sys.stdout):
         if not line:
             continue
         arr = line.split(',')
-        if len(arr) != 17:
+        if len(arr) != 16:
             continue
         arr = map((lambda s: s.strip()), arr)
-        dt, cur_price, predicted_value, atr, diff, cur_price_, stoploss, takeprofit, size_per_trade, cur_size, trade_size, close_size, open_position_size, cur_total_pnl, pnl_per_share, cur_pnl, comment = arr
+        dt, cur_price, predicted_value, atr, diff, cur_price_, stoploss, takeprofit, size_per_trade, cur_size, trade_size, open_position_size, cur_total_pnl, pnl_per_share, cur_pnl, comment = arr
         try:
             int(cur_size)
         except:

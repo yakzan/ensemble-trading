@@ -23,3 +23,18 @@ def open_for_write(filename, mode='w'):
     ensure_dir(filename)
     return open(filename, mode)
 
+def stime(secs):
+    return '%02d:%02d:%02d' % (secs / 3600, secs % 3600 / 60, secs % 60)
+
+def sdate(d):
+    return '%4d/%02d/%02d' % (d / 10000, d % 10000 / 100, d % 100)
+
+def get_secs(stime):
+    arr = stime.split(':')
+    if len(arr) == 2:
+        return int(arr[0]) * 3600 + int(arr[1]) * 60
+    elif len(arr) == 3:
+        return int(arr[0]) * 3600 + int(arr[1]) * 60 + int(arr[2])
+    else:
+        return int(arr[0])
+

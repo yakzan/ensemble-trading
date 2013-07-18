@@ -74,7 +74,7 @@ def onemin_to_bars(filename, first_day=0):
             _date = int(arr[2]) * 10000 + int(arr[0]) * 100 + int(arr[1])
             if first_day != 0 and _date >= first_day:
                 break
-            _time = int(_time.replace(':', ''))
+            _time = int(_time[:5].replace(':', ''))
             _open = float(_open)
             _high = float(_high)
             _low = float(_low)
@@ -328,7 +328,7 @@ class SvmData:
             if self.source == SvmData.YAHOO:
                 self.skip_front = 50
             else:
-                self.skip_front = 200
+                self.skip_front = 20
         else:
             self.skip_front = skip_front
 
@@ -667,7 +667,7 @@ class SvmData:
             return
         self.cur_date = new_date
         # remove older bars
-        self.bars = self.bars[-1000:]
+        self.bars = self.bars[-300:]
         self.bars_in_cur_date = 0
 
     def update_with_bat(self, bat):
@@ -694,7 +694,7 @@ class SvmData:
         if finished_bar is None:
             return None
         else:
-            print finished_bar
+            #print finished_bar
             return self.update_with_bar()
 
     def update_with_bar(self):
